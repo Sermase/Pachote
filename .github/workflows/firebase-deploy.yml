@@ -1,0 +1,37 @@
+# Cada push a main publica la app en Firebase Hosting y actualiza las reglas de Firestore.
+# Necesita el secreto FIREBASE_SERVICE_ACCOUNT (JSON de la cuenta de servicio) en Settings → Secrets → Actions.
+name: Desplegar en Firebase
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  hosting:
+    name: App (Hosting)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          projectId: pachote-78042
+          channelId: live
+
+  rules:
+    name: Reglas de Firestore
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Desplegar reglas
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          echo "$SA" > "$RUNNER_TEMP/sa.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
+          npx --yes firebase-tools@13 deploy --only firestore:rules --project pachote-78042 --non-interactive

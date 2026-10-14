@@ -1,11 +1,11 @@
-// ⚠️ Pega aquí el bloque firebaseConfig de tu proyecto:
-// Consola de Firebase → ⚙️ Configuración del proyecto → General → Tus apps → App web → «Configuración del SDK» → Config.
-// No es secreto: lo que protege los datos son las reglas de firestore.rules.
+// Configuración web de Firebase del proyecto «pachote-78042».
+// No es secreta: lo que protege los datos son las reglas de firestore.rules.
 export const firebaseConfig = {
-  apiKey: "PEGA_AQUI",
-  authDomain: "PEGA_AQUI.firebaseapp.com",
-  projectId: "PEGA_AQUI",
-  storageBucket: "PEGA_AQUI.appspot.com",
-  messagingSenderId: "PEGA_AQUI",
-  appId: "PEGA_AQUI"
+  apiKey: "AIzaSyCMwiD3DD0-35RaXQ3akI38z6UWpDaRkp8",
+  authDomain: "pachote-78042.firebaseapp.com",
+  projectId: "pachote-78042",
+  storageBucket: "pachote-78042.firebasestorage.app",
+  messagingSenderId: "158752849443",
+  appId: "1:158752849443:web:7af26532dc415c0bbebb96",
+  measurementId: "G-19RXN07P38"
 };

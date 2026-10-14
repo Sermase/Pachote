@@ -6,7 +6,11 @@
 3. **Configuración del proyecto → General → Tus apps → Añadir app web** (</>). Copia el bloque `firebaseConfig`.
 4. **Authentication → Configuración → Dominios autorizados**: comprueba que están `pachote.web.app` y `pachote.firebaseapp.com` (o el ID real de tu proyecto).
 
-## 2. En tu ordenador
+## 2. Despliegue
+Cada `git push` a `main` publica la app y las reglas automáticamente (`.github/workflows/firebase-deploy.yml`).
+La app queda en **https://pachote-78042.web.app**.
+
+## 2b. Despliegue manual (opcional)
 1. Pega tu `firebaseConfig` en `public/firebase-config.js`.
 2. Pon el ID de tu proyecto en `.firebaserc` (donde dice `PEGA_AQUI_TU_PROJECT_ID`).
 3. En esta carpeta:
