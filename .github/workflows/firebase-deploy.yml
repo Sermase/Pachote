@@ -34,4 +34,13 @@ jobs:
         run: |
           echo "$SA" > "$RUNNER_TEMP/sa.json"
           export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
-          npx --yes firebase-tools@13 deploy --only firestore:rules --project pachote-78042 --non-interactive
+          set +e
+          npx --yes firebase-tools@13 deploy --only firestore:rules --project pachote-78042 --non-interactive > "$RUNNER_TEMP/out.txt" 2>&1
+          code=$?
+          cat "$RUNNER_TEMP/out.txt"
+          if [ $code -ne 0 ]; then
+            # El error aparece como aviso en el resumen de la ejecución
+            msg=$(grep -iE "error|denied|permission|not found|disabled|enable" "$RUNNER_TEMP/out.txt" | tail -5 | tr '\n' ' ' | cut -c1-900)
+            echo "::error title=Reglas de Firestore::${msg:-fallo desconocido}"
+            exit $code
+          fi
