@@ -1,0 +1,6 @@
+# Datos personales exportados y artefactos locales
+mis-planes/
+*.pachote.json
+.firebase/
+node_modules/
+.DS_Store

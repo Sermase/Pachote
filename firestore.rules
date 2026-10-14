@@ -1,0 +1,49 @@
+rules_version = '2';
+// Pachote · reglas de seguridad.
+// Solo quien entró con el link de invitación vigente (o creó el grupo) puede ver y tocar ese grupo.
+service cloud.firestore {
+  match /databases/{db}/documents {
+    function signedIn() { return request.auth != null; }
+    function grp(gid) { return get(/databases/$(db)/documents/groups/$(gid)); }
+    function accPath(gid) { return /databases/$(db)/documents/groups/$(gid)/access/$(request.auth.uid); }
+    function isMember(gid) { return signedIn() && exists(accPath(gid)); }
+    function role(gid) { return get(accPath(gid)).data.role; }
+    function canEdit(gid) { return isMember(gid) && role(gid) in ['admin', 'editor']; }
+    function isAdmin(gid) { return isMember(gid) && role(gid) == 'admin'; }
+
+    // Mi lista de grupos: solo yo.
+    match /users/{uid} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
+    match /groups/{gid} {
+      allow get: if isMember(gid);
+      allow list: if false;
+      allow create: if signedIn() && request.resource.data.owner == request.auth.uid
+                    && request.resource.data.inviteToken is string && request.resource.data.inviteToken.size() >= 16;
+      // Los editores cambian gente, familias y opciones; el dueño y el link solo los toca un administrador.
+      allow update: if canEdit(gid) && (isAdmin(gid) ||
+                    !request.resource.data.diff(resource.data).affectedKeys().hasAny(['owner', 'inviteToken']));
+      allow delete: if isAdmin(gid);
+
+      // Un documento por movimiento.
+      match /movs/{mid} {
+        allow read: if isMember(gid);
+        allow write: if canEdit(gid);
+      }
+
+      // Dispositivos con acceso.
+      match /access/{uid} {
+        allow read: if isMember(gid);
+        // Entrar: con el link vigente (como editor) o, si es el dueño recién creado, como administrador.
+        allow create: if signedIn() && uid == request.auth.uid && (
+            (request.resource.data.role == 'editor' && request.resource.data.token == grp(gid).data.inviteToken)
+         || (request.resource.data.role == 'admin' && grp(gid).data.owner == request.auth.uid));
+        // Cada uno cambia su «quién soy»; los permisos solo un administrador.
+        allow update: if isAdmin(gid) || (uid == request.auth.uid &&
+                      !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'token']));
+        allow delete: if uid == request.auth.uid || isAdmin(gid);
+      }
+    }
+  }
+}
