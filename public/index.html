@@ -657,6 +657,33 @@ function homeHTML(badge){
   :`<div class="empty"><h2>Aún no tienes grupos</h2><p>Un grupo es un viaje, una casa compartida o una cena: tiene su gente, sus familias y sus gastos.</p><button class="btn" data-act="newplan">Crear grupo</button></div>`}
   <p class="hint" style="text-align:center">¿Te han pasado un link de un grupo? Ábrelo y entrarás directamente.</p>`;
 }
+/* Junta una copia (.json) dentro del grupo actual: personas y familias por nombre, ids nuevos para lo demás.
+   Cada movimiento importado guarda su origen (imp) para no duplicarlo si se importa otra vez. */
+function mergeInto(cur,src){
+  const np=clone(cur);const norm=t=>String(t||'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const srcKey=src.id||src.name||'copia';const wasEmpty=!np.members.length&&!np.expenses.length;
+  const hMap={},mMap={},jMap={};let addHouseholds=0,addMembers=0,matched=0;
+  (src.households||[]).forEach(h=>{const ex=np.households.find(x=>norm(x.name)===norm(h.name));if(ex){hMap[h.id]=ex.id;return}
+    const nh={...clone(h),id:uid(),joints:[]};np.households.push(nh);hMap[h.id]=nh.id;addHouseholds++});
+  (src.members||[]).forEach(m=>{const ex=np.members.find(x=>norm(x.name)===norm(m.name));if(ex){mMap[m.id]=ex.id;matched++;if(!ex.hh&&m.hh&&hMap[m.hh]){ex.hh=hMap[m.hh];['weight','kid'].forEach(k=>{if(m[k]!=null)ex[k]=m[k]})}return}
+    const nm={...clone(m),id:uid()+Math.random().toString(36).slice(2,4),hh:m.hh&&hMap[m.hh]?hMap[m.hh]:null};delete nm.kidsBy;np.members.push(nm);mMap[m.id]=nm.id;addMembers++});
+  {const ord=(src.members||[]).map(m=>mMap[m.id]);const pos=id=>{const i=ord.indexOf(id);return i<0?-1:i};np.members.sort((a,b)=>pos(a.id)-pos(b.id))}
+  const remapRule=r=>r?{...r,ids:(r.ids||[]).map(i=>mMap[i]).filter(Boolean)}:r;
+  (src.members||[]).forEach(m=>{if(m.kidsBy){const t=np.members.find(x=>x.id===mMap[m.id]);if(t&&!t.kidsBy)t.kidsBy=remapRule(m.kidsBy)}});
+  (src.households||[]).forEach(h=>{const t=np.households.find(x=>x.id===hMap[h.id]);if(!t)return;
+    if(h.kidsBy&&!t.kidsBy)t.kidsBy=remapRule(h.kidsBy);
+    if(h.invited&&!(t.invited||[]).length)t.invited=h.invited.map(i=>mMap[i]).filter(Boolean);
+    (h.joints||[]).forEach(j=>{const ids=j.ids.map(i=>mMap[i]).filter(Boolean);const k=[...ids].sort().join(',');const ex=(t.joints||[]).find(x=>[...x.ids].sort().join(',')===k);
+      if(ex){jMap[j.id]=ex.id;return}const nj={id:uid(),ids};t.joints=[...(t.joints||[]),nj];jMap[j.id]=nj.id})});
+  const key=k=>{if(!k)return k;const [t,id]=[k.slice(0,2),k.slice(2)];if(t==='m:')return mMap[id]?'m:'+mMap[id]:k;if(t==='h:')return hMap[id]?'h:'+hMap[id]:k;if(t==='j:')return jMap[id]?'j:'+jMap[id]:k;return k};
+  const seen=new Set(np.expenses.map(e=>e.imp).filter(Boolean));let addMovs=0,skipped=0;
+  (src.expenses||[]).forEach(e=>{const imp=srcKey+':'+e.id;if(seen.has(imp)){skipped++;return}
+    const ne={...clone(e),id:uid(),imp,payer:key(e.payer),parts:(e.parts||[]).map(i=>mMap[i]).filter(Boolean)};if(e.to)ne.to=key(e.to);
+    const rk=o=>{const r={};for(const k in o||{})if(mMap[k])r[mMap[k]]=o[k];return r};ne.custom=rk(e.custom);ne.vals=rk(e.vals);
+    np.expenses.push(ne);addMovs++});
+  if(wasEmpty){['features','kidsBy'].forEach(k=>{if(src[k]!=null&&np[k]==null)np[k]=clone(src[k])})}
+  return {plan:np,addHouseholds,addMembers,matched,addMovs,skipped};
+}
 function inviteLink(g){const t=ST&&ST.token?ST.token(g):'';return location.origin+location.pathname+'#join/'+g+'/'+t}
 /* ¿Quién eres? Se pregunta una vez por grupo y dispositivo; sirve para proponerte como pagador y para ver quién tiene acceso. */
 function askWho(force){
@@ -1045,6 +1072,7 @@ function openPlan(id){
      ${p.closed?'':`<button data-m="etapa">Cerrar etapa y seguir con la misma gente<small>Guarda los ${ops} movimientos actuales en un plan cerrado y deja este limpio para lo siguiente.</small></button>`}
      <button data-m="gente">Nuevo plan con la misma gente<small>Copia personas, familias y pesos, sin movimientos.</small></button>
      <button data-m="todo">Duplicar con movimientos<small>Copia exacta para probar cosas sin tocar el original.</small></button>
+     ${p.closed?'':'<button data-m="importin">Importar datos en este grupo (.json)<small>Añade la gente, las familias y los movimientos de una copia. Las personas con el mismo nombre se juntan; no se duplica nada.</small></button><input type="file" id="pimpin" accept=".json,application/json" hidden>'}
      <button data-m="export">Descargar copia de seguridad (.json)<small>Guarda todo el plan en un archivo. Se puede importar al crear un plan nuevo.</small></button></div>`)}
    ${gsec('estado','🔒',p.closed?'Reabrir':'Cerrar o borrar',p.closed?'Cerrado':'Abierto',`<div class="menu" id="pmenu2">
      ${p.closed?`<button data-m="reabrir">Reabrir plan<small>Vuelve a permitir cambios.</small></button>`:`<button data-m="cerrar">Cerrar plan<small>Queda en «Cerrados», solo lectura. Se puede reabrir.</small></button>`}</div>
@@ -1062,6 +1090,16 @@ function openPlan(id){
     const step=$('#pstep');
     s.querySelectorAll('#pmenu button,#pmenu2 button').forEach(b=>b.onclick=()=>{
       const m=b.dataset.m;
+      if(m==='importin'){const fi=$('#pimpin');fi.value='';fi.onchange=()=>{const f=fi.files[0];if(!f)return;const r=new FileReader();
+        r.onload=()=>{let src;try{const d=JSON.parse(r.result);src=d.data||d;if(!Array.isArray(src.members)||!Array.isArray(src.expenses))throw 0}catch(x){failer(s)('Ese archivo no es una copia de Pachote.');return}
+          const res=mergeInto(plan(),src);
+          step.innerHTML=`<div class="card"><b>📥 Importar «${esc(src.name||'copia')}»</b>
+            <p class="hint" style="margin:0">${res.addMembers} personas nuevas${res.matched?`, ${res.matched} ya estaban (se juntan por nombre)`:''} · ${res.addHouseholds} familias nuevas · ${res.addMovs} movimientos${res.skipped?` · ${res.skipped} ya importados antes (se omiten)`:''}.</p>
+            <div class="actions"><button class="btn sec" data-no>Cancelar</button><button class="btn" data-yes>Importar</button></div></div>`;
+          step.scrollIntoView({behavior:'smooth',block:'nearest'});
+          step.querySelector('[data-no]').onclick=()=>step.innerHTML='';
+          step.querySelector('[data-yes]').onclick=()=>{savePlan(res.plan);closeSheet();toast(`Importados ${res.addMovs} movimientos y ${res.addMembers} personas`)}};
+        r.readAsText(f)};fi.click();return}
       if(m==='export'){const d=clone(plan());delete d._me;delete d._v;delete d.inviteToken;delete d.owner;const blob=new Blob([JSON.stringify({app:'pachote',version:1,exported:new Date().toISOString(),data:d},null,1)],{type:'application/json'});
         const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(d.name||'plan').replace(/[^\wáéíóúñü -]+/gi,'').trim().replace(/\s+/g,'-')+'.pachote.json';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500);toast('Copia descargada');return}
       setTimeout(()=>step.scrollIntoView({behavior:'smooth',block:'nearest'}),40);
