@@ -1,6 +1,6 @@
 /* Pachote · capa de datos.
    Firestore:
-     users/{uid}                      { groups: { gid: { joined } } }      → mis grupos
+     users/{uid}                      { groups: { gid: { joined } }, profile: { name, photo } } → mis grupos y mi perfil
      groups/{gid}                     núcleo del plan (gente, familias, opciones) + owner + inviteToken
      groups/{gid}/movs/{mid}          un documento por movimiento (así dos personas pueden apuntar a la vez)
      groups/{gid}/access/{uid}        dispositivos con acceso { role, memberId, token, joined, label }
@@ -28,7 +28,7 @@ async function firebaseStore(){
   if(!user)throw new Error('auth');
   const uid=()=>auth.currentUser.uid;
   const gref=g=>F.doc(db,'groups',g),mref=(g,m)=>F.doc(db,'groups',g,'movs',m),aref=(g,u)=>F.doc(db,'groups',g,'access',u),uref=u=>F.doc(db,'users',u);
-  const subs={};let myGroups={};let onPlans=()=>{};const plans={};
+  const subs={};let myGroups={};let onPlans=()=>{};const plans={};let myProfile=null,onProf=()=>{};
   const emit=()=>onPlans(Object.fromEntries(Object.entries(plans).filter(([,p])=>p&&p._core).map(([g,p])=>[g,{...p._core,id:g,expenses:p._movs?Object.values(p._movs).sort((a,b)=>(a.created||0)-(b.created||0)):[],_me:p._acc||null}])));
   function watchGroup(g){
     if(subs[g])return;plans[g]={};const drop=()=>{unwatch(g);F.updateDoc(uref(uid()),{['groups.'+g]:F.deleteField()}).catch(()=>{});emit()};
@@ -41,7 +41,8 @@ async function firebaseStore(){
   return {
     kind:'cloud',
     user:()=>{const u=auth.currentUser;return u?{uid:u.uid,anon:u.isAnonymous,email:u.email||'',name:u.displayName||''}:null},
-    watch(cb){onPlans=cb;return F.onSnapshot(uref(uid()),s=>{myGroups=(s.exists()&&s.data().groups)||{};Object.keys(myGroups).forEach(watchGroup);Object.keys(subs).forEach(g=>{if(!myGroups[g])unwatch(g)});emit()})},
+    watch(cb){onPlans=cb;return F.onSnapshot(uref(uid()),s=>{myGroups=(s.exists()&&s.data().groups)||{};
+      const pr=(s.exists()&&s.data().profile)||null;if(JSON.stringify(pr)!==JSON.stringify(myProfile)){myProfile=pr;onProf(pr)}Object.keys(myGroups).forEach(watchGroup);Object.keys(subs).forEach(g=>{if(!myGroups[g])unwatch(g)});emit()})},
     async create(p){
       const g=p.id,core=coreOf(p);core.owner=uid();core.inviteToken=rid(24);core.created=core.created||Date.now();
       await F.setDoc(gref(g),core);
@@ -78,6 +79,9 @@ async function firebaseStore(){
     regenToken:g=>F.updateDoc(gref(g),{inviteToken:rid(24)}),
     token:g=>plans[g]?._core?.inviteToken||'',
     myUid:()=>uid(),
+    profile:()=>myProfile,
+    onProfile(cb){onProf=cb},
+    setProfile:pr=>F.setDoc(uref(uid()),{profile:clean(pr)},{merge:true}),
     async linkGoogle(){
       const prov=new A.GoogleAuthProvider();
       try{await A.linkWithPopup(auth.currentUser,prov);return 'linked'}
@@ -99,7 +103,7 @@ function mockStore(){
   const K='pachote_mockdb';const load=()=>{try{return JSON.parse(localStorage.getItem(K))||{users:{},groups:{}}}catch(e){return {users:{},groups:{}}}};
   const saveDb=d=>{localStorage.setItem(K,JSON.stringify(d));setTimeout(fire,0)};
   let me=sessionStorage.getItem('pachote_mock_uid');if(!me){me='u_'+rid(8);sessionStorage.setItem('pachote_mock_uid',me)}
-  let cb=()=>{};const fire=()=>{const d=load();const gs=(d.users[me]&&d.users[me].groups)||{};const out={};
+  let cb=()=>{},pcb=()=>{},lastProf='null';const fire=()=>{const d=load();const pr=JSON.stringify(d.users[me]?.profile||null);if(pr!==lastProf){lastProf=pr;pcb(JSON.parse(pr))}const gs=(d.users[me]&&d.users[me].groups)||{};const out={};
     for(const g in gs){const G=d.groups[g];if(!G||!G.access[me])continue;out[g]={...clean(G.core),id:g,expenses:Object.values(G.movs).sort((a,b)=>(a.created||0)-(b.created||0)),_me:G.access[me]}}cb(out);accCbs.forEach(([g,f])=>{const G=load().groups[g];f(G?Object.entries(G.access).map(([u,a])=>({uid:u,...a})):[])})};
   const accCbs=[];window.addEventListener('storage',e=>{if(e.key===K)fire()});
   const can=(G,role)=>G&&G.access[me]&&(role==='admin'?G.access[me].role==='admin':['admin','editor'].includes(G.access[me].role));
@@ -119,6 +123,8 @@ function mockStore(){
     async kick(g,u){const d=load();if(!can(d.groups[g],'admin'))throw new Error('perm');delete d.groups[g].access[u];saveDb(d)},
     async regenToken(g){const d=load();if(!can(d.groups[g],'admin'))throw new Error('perm');d.groups[g].core.inviteToken=rid(24);saveDb(d)},
     token:g=>load().groups[g]?.core.inviteToken||'',myUid:()=>me,
+    profile:()=>load().users[me]?.profile||null,onProfile(f){pcb=f},
+    async setProfile(pr){const d=load();(d.users[me]??={groups:{}}).profile={...(d.users[me].profile||{}),...clean(pr)};saveDb(d)},
     async linkGoogle(){throw new Error('mock')},signOut:async()=>{}
   };
 }
