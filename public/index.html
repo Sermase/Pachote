@@ -598,13 +598,26 @@ function compute(p,indiv=false,foldKids=true){
   if(indiv&&foldKids&&FEAT.families)p.members.forEach(m=>{if(!isKid(m)||!m.hh||KD[m.id])return;const hd=famHead(p,m.hh);if(!hd||hd.id===m.id)return;
     net['m:'+hd.id]=(net['m:'+hd.id]||0)+(net['m:'+m.id]||0);delete net['m:'+m.id]});
   const exact={...net};const rn=roundKeepSum(net);for(const u in rn)net[u]=rn[u];
-  const deb=[],cre=[];
-  for(const u in net){if(net[u]<0)deb.push([u,-net[u]]);else if(net[u]>0)cre.push([u,net[u]])}
-  deb.sort((a,b)=>b[1]-a[1]);cre.sort((a,b)=>b[1]-a[1]);
-  const tx=[];let i=0,j=0;
-  while(i<deb.length&&j<cre.length){const x=Math.min(deb[i][1],cre[j][1]);if(x>0)tx.push({from:deb[i][0],to:cre[j][0],amt:x});deb[i][1]-=x;cre[j][1]-=x;if(!deb[i][1])i++;if(!cre[j][1])j++}
-  return {net,exact,paid,cons,chg,spent,income,tx};
+  return {net,exact,paid,cons,chg,spent,income,tx:minTransfers(net)};
 }
+/* Mínimo de pagos: se buscan el máximo de subgrupos que se cuadran entre sí (cada uno necesita «tamaño − 1» pagos).
+   Exacto hasta 16 saldos pendientes; con más, reparto voraz. */
+function greedyTx(items){const deb=[],cre=[];items.forEach(([u,v])=>{if(v<0)deb.push([u,-v]);else if(v>0)cre.push([u,v])});
+  deb.sort((a,b)=>b[1]-a[1]);cre.sort((a,b)=>b[1]-a[1]);const tx=[];let i=0,j=0;
+  while(i<deb.length&&j<cre.length){const x=Math.min(deb[i][1],cre[j][1]);if(x>0)tx.push({from:deb[i][0],to:cre[j][0],amt:x});deb[i][1]-=x;cre[j][1]-=x;if(!deb[i][1])i++;if(!cre[j][1])j++}
+  return tx}
+function minTransfers(net){
+  const it=Object.entries(net).filter(([,v])=>v);const n=it.length;
+  if(n<3||n>16)return greedyTx(it);
+  const key=JSON.stringify(it);const C=(minTransfers.cache??=new Map());if(C.has(key))return C.get(key).map(x=>({...x}));
+  const N=1<<n,sum=new Int32Array(N),dp=new Int8Array(N);
+  for(let m=1;m<N;m++){const b=31-Math.clz32(m&-m);sum[m]=sum[m^(1<<b)]+it[b][1]}
+  for(let m=1;m<N;m++){let best=0;for(let b=0;b<n;b++)if(m>>b&1){const v=dp[m^(1<<b)];if(v>best)best=v}dp[m]=best+(sum[m]===0?1:0)}
+  const ord=[];let m=N-1;while(m){const z=sum[m]===0?1:0;for(let b=0;b<n;b++)if(m>>b&1&&dp[m^(1<<b)]+z===dp[m]){ord.push(b);m^=1<<b;break}}
+  ord.reverse();const tx=[];let seg=[],acc=0;
+  ord.forEach(b=>{seg.push(it[b]);acc+=it[b][1];if(acc===0){tx.push(...greedyTx(seg));seg=[]}});
+  if(seg.length)tx.push(...greedyTx(seg));
+  tx.sort((a,b)=>b.amt-a.amt);if(C.size>50)C.clear();C.set(key,tx);return tx.map(x=>({...x}))}
 /* Para pagos: la persona responsable y, si es una familia, la familia entre paréntesis. */
 function payWho(p,from,to){const pn=u=>u&&u.startsWith('h:')?(famHead(p,u.slice(2))||{}).name||unitName(p,u):unitName(p,u);const fn=u=>u&&u.startsWith('h:')?unitName(p,u):'';
   const f1=fn(from),f2=fn(to);return `<span class="pw">${esc(pn(from))} <em>→</em> ${esc(pn(to))}</span>${f1||f2?`<small class="pf">${esc(f1||'por su cuenta')} → ${esc(f2||'por su cuenta')}</small>`:''}`}
