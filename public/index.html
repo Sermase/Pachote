@@ -460,7 +460,7 @@ const featOf=p=>({families:p?.features?.families!==false,kids:p?.features?.kids!
 const isKid=m=>FEAT.kids&&(m.kid!=null?!!m.kid:(m.weight??1)<1);
 const isOn=m=>!m.inactive;
 /* Marcas de cada persona en cualquier lista: niño y peso cuando no es ×1. */
-const mTags=m=>m?`${isKid(m)?' <span class="kid">niño</span>':''}${(m.weight??1)!==1?` <span class="wt">×${String(Math.round((m.weight??1)*100)/100).replace('.',',')}</span>`:''}`:'';
+const mTags=m=>m?`${isKid(m)?' <span class="kid">niño</span>':''}${(m.weight??1)!==1||isKid(m)?` <span class="wt">×${String(Math.round((m.weight??1)*100)/100).replace('.',',')}</span>`:''}`:'';
 const dayList=(a,b)=>{const out=[];if(!b||b<=a)return [a];let d=new Date(a+'T00:00:00Z');const end=new Date(b+'T00:00:00Z');while(d<=end&&out.length<400){out.push(d.toISOString().slice(0,10));d=new Date(d.getTime()+864e5)}return out};
 const fmtShort=s=>new Date(s+'T12:00').toLocaleDateString('es-ES',{day:'numeric',month:'short'});
 /* Fecha de la operación (e.date) y, opcional, periodo del gasto (e.dateStart–e.dateEnd). Sin periodo, cuenta en la fecha de la operación. */
@@ -1008,7 +1008,7 @@ function viewStats(p,c){
 
 /* Gente */
 function zonesHTML(p,editable){
-  const chip=m=>`<span class="mchip${isKid(m)?' kidc':''}${isOn(m)?'':' off'}" data-mchip="${m.id}" role="button" tabindex="0" aria-label="${esc(m.name)}. Arrastra para mover u ordenar; pulsa para ver sus operaciones">${avHTML(m,memberColor(p,m))}${esc(m.name)}${isKid(m)&&wOf(m)===0.5?'':mTags(m)}${isOn(m)?'':' <span class="off-tag">inactivo</span>'}</span>`;
+  const chip=m=>`<span class="mchip${isKid(m)?' kidc':''}${isOn(m)?'':' off'}" data-mchip="${m.id}" role="button" tabindex="0" aria-label="${esc(m.name)}. Arrastra para mover u ordenar; pulsa para ver sus operaciones">${avHTML(m,memberColor(p,m))}${esc(m.name)}${mTags(m)}${isOn(m)?'':' <span class="off-tag">inactivo</span>'}</span>`;
   const rows=(zid,ms)=>{const ad=ms.filter(m=>!isKid(m)),kd=ms.filter(isKid);
     return `<div class="sub" data-sub="${zid}" data-kid="0"><span class="subl">Adultos</span><div class="chips">${ad.map(chip).join('')||(editable?'<span class="empty-z">Suelta aquí</span>':'')}</div></div>
     ${kd.length||editable?`<div class="sub kids${kd.length?'':' ek'}" data-sub="${zid}" data-kid="1"><span class="subl">Niños</span><div class="chips">${kd.map(chip).join('')||'<span class="empty-z">suelta aquí</span>'}</div></div>`:''}`};
