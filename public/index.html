@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="es"><head><meta charset="utf-8">
-<script>try{const t=localStorage.getItem('pachote_theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
+<script>window.__bip=null;addEventListener('beforeinstallprompt',e=>{e.preventDefault();window.__bip=e;window.dispatchEvent(new Event('pachote-installable'))});
+try{const t=localStorage.getItem('pachote_theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#2F3FD0">
 <meta name="description" content="Pachote: reparte gastos de grupo, viajes y casa, con familias y niños. Cuentas claras, a pachas.">
@@ -153,6 +154,8 @@ button.row:hover{background:var(--sunk)}
 .av.ph{background-size:cover!important;background-position:center!important;color:transparent!important}
 .meav{width:38px;height:38px;border-radius:50%;border:2px solid var(--surface);box-shadow:var(--shadow);display:grid;place-items:center;font-weight:800;color:#fff;background:var(--accent);padding:0;font-size:14px;flex:none;margin-left:8px}
 .gbanner .meav{border-color:rgba(255,255,255,.6);width:36px;height:36px}
+.instbtn{display:flex;align-items:center;gap:12px;width:100%;text-align:left;border:1px dashed var(--accent);background:var(--accent-soft);color:var(--ink);border-radius:var(--r);padding:12px 14px;font:inherit}
+.instbtn .ico{font-size:24px}.instbtn span:nth-child(2){flex:1;display:flex;flex-direction:column}.instbtn small{color:var(--muted);font-size:12.5px}.instbtn .chev{color:var(--accent);font-size:20px}
 .meav.menu{background:var(--surface);color:var(--ink);border-color:var(--line)}
 .gbanner .meav.menu{background:rgba(255,255,255,.18);color:#fff}
 .mitem{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--surface);border:none;border-radius:14px;padding:12px 14px;color:inherit;text-decoration:none;font:inherit}
@@ -579,6 +582,7 @@ async function boot(){
   if(j){try{await ST.join(j.g,j.t);S.current=j.g;S.justJoined=j.g;toast('Te has unido al grupo')}catch(e){console.error(e);toast('Ese link de invitación no es válido o ha caducado. Pide uno nuevo.')}
     history.replaceState(null,'',location.pathname+location.search);if(S.current)try{history.pushState({g:S.current},'','#g')}catch(x){}}
   if(ST.onProfile)ST.onProfile(()=>{if(!S.current||!document.querySelector('#sheetRoot .scrim'))render()});
+  if(isIOS())setTimeout(maybeAskInstall,2500);
   ST.watch(map=>{Object.values(map).forEach(remember);S.plans=map;if(S.current&&!map[S.current]&&S.justJoined!==S.current)S.current=null;render();askWho()});
 }
 if(window.PachoteStore!==undefined)boot();else window.addEventListener('pachote-store',boot,{once:true});
@@ -811,6 +815,7 @@ function homeHTML(badge){
   ${ps.length?`<div class="glist list">${open.map(gcard).join('')||'<div class="row"><span class="hint">No tienes grupos abiertos.</span></div>'}</div>
   ${closed.length?`<details class="fsec"><summary><span class="ico">🔒</span><span class="st">Cerrados</span><span class="ss">${closed.length}</span></summary><div class="fbody"><div class="glist list">${closed.map(gcard).join('')}</div></div></details>`:''}`
   :`<div class="empty"><h2>Aún no tienes grupos</h2><p>Un grupo es un viaje, una casa compartida o una cena: tiene su gente, sus familias y sus gastos.</p><button class="btn" data-act="newplan">Crear grupo</button></div>`}
+  ${installBtn()}
   <p class="hint" style="text-align:center">¿Te han pasado un link de un grupo? Ábrelo y entrarás directamente.</p>`;
 }
 /* Junta una copia (.json) dentro del grupo actual: personas y familias por nombre, ids nuevos para lo demás.
@@ -902,8 +907,30 @@ function openProfile(){
     const gg=$('#pfgoogle');if(gg)gg.onclick=()=>ST.linkGoogle().then(r=>{toast(r==='linked'?'Listo: tus grupos quedan guardados en tu cuenta de Google':'Has entrado con tu cuenta de Google');closeSheet();render()}).catch(e=>toast(e.code==='auth/popup-closed-by-user'?'Cancelado':'No se pudo conectar con Google'));
   },false);
 }
+/* Instalar como app: botón en inicio mientras no esté instalada, y una sola invitación la primera vez. */
+const isStandalone=()=>matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
+const isIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+function canInstall(){if(isStandalone()||S.installed)return false;return !!window.__bip||isIOS()}
+function installBtn(){return canInstall()?`<button class="instbtn" data-act="install"><span class="ico">📲</span><span><b>Instala Pachote</b><small>Ábrelo como una app, a pantalla completa y desde su icono</small></span><span class="chev">›</span></button>`:''}
+function doInstall(){
+  if(window.__bip){const e=window.__bip;e.prompt();e.userChoice.then(r=>{window.__bip=null;if(r.outcome==='accepted'){S.installed=true;closeSheet();
+      sheet(`<h2>🎉 Pachote instalado</h2><p class="hint">Ya tienes su icono en la pantalla de inicio${/android/i.test(navigator.userAgent)?' y los links de grupos que te pasen por WhatsApp se abrirán directamente en la app':''}. Ábrelo desde ahí la próxima vez.</p><button class="btn" data-close>Entendido</button>`,s=>{s.querySelector('[data-close]').onclick=closeSheet},false)}
+    render()}).catch(()=>{});return}
+  if(isIOS()){sheet(`<h2>📲 Instalar en iPhone</h2><ol class="legal" style="padding-left:20px;display:flex;flex-direction:column;gap:8px;margin:0">
+      <li>Abre esta página en <b>Safari</b>.</li><li>Pulsa el botón <b>Compartir</b> <span style="display:inline-block;border:1.5px solid currentColor;border-radius:5px;padding:0 5px;font-size:13px">⇧</span> de abajo.</li>
+      <li>Elige <b>«Añadir a pantalla de inicio»</b> y pulsa <b>Añadir</b>.</li></ol><p class="hint">Luego abre Pachote desde su icono: se verá a pantalla completa, como una app.</p><button class="btn" data-close>Entendido</button>`,s=>{s.querySelector('[data-close]').onclick=closeSheet},false);return}
+  toast('Tu navegador no deja instalar desde aquí. Busca «Instalar app» o «Añadir a pantalla de inicio» en su menú.')}
+function maybeAskInstall(){
+  if(!canInstall()||S.current||document.querySelector('#sheetRoot .scrim'))return;
+  try{if(localStorage.getItem('pachote_install_asked'))return;localStorage.setItem('pachote_install_asked','1')}catch(x){return}
+  sheet(`<div style="text-align:center;display:flex;flex-direction:column;gap:10px;align-items:center"><img src="icon-192.png" alt="" width="72" height="72" style="border-radius:18px;box-shadow:var(--shadow)">
+    <h2>¿Instalas Pachote?</h2><p class="hint" style="margin:0">Ocupa casi nada, se abre al momento desde su icono y funciona aunque no haya cobertura.</p></div>
+    <div class="actions"><button class="btn sec" data-close>Ahora no</button><button class="btn" id="instgo">📲 Instalar</button></div>`,s=>{s.querySelector('[data-close]').onclick=closeSheet;s.querySelector('#instgo').onclick=()=>{if(!window.__bip)closeSheet();doInstall()}},false);
+}
+addEventListener('pachote-installable',()=>{render();setTimeout(maybeAskInstall,1200)});
+addEventListener('appinstalled',()=>{S.installed=true;window.__bip=null;render()});
 /* Menú general: perfil, tema, información de Pachote y el resto de Istari Core. */
-const APP_VERSION='v14';
+const APP_VERSION='v15';
 function themeSeg(){return `<div class="seg" id="mtheme">${[['auto','Automático'],['light','☀️ Claro'],['dark','🌙 Oscuro']].map(([k,n])=>`<button data-k="${k}" aria-pressed="${(document.documentElement.dataset.theme||'auto')===k}">${n}</button>`).join('')}</div>`}
 function bindTheme(s){s.querySelectorAll('#mtheme button').forEach(b=>b.onclick=()=>{const k=b.dataset.k;if(k==='auto')delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=k;
   try{k==='auto'?localStorage.removeItem('pachote_theme'):localStorage.setItem('pachote_theme',k)}catch(x){}s.querySelectorAll('#mtheme button').forEach(x=>x.setAttribute('aria-pressed',x===b))})}
@@ -961,6 +988,7 @@ document.addEventListener('click',ev=>{
   else if(a==='open'){S.mq='';S.current=v;S.tab='movs';render();window.scrollTo({top:0});try{history.pushState({g:v},'','#g')}catch(x){}askWho()}
   else if(a==='profile'){openProfile()}
   else if(a==='menu'){openMenu()}
+  else if(a==='install'){doInstall()}
   else if(a==='feat'){if(guard())return;const np=clone(plan());np.features={...featOf(np),[v]:true};FEAT=featOf(np);savePlan(np);
     toast(v==='families'?'👪 Familias activadas':'🧸 Niños activados')}
   else if(a==='home'){S.current=null;render();window.scrollTo({top:0});if(history.state&&history.state.g)try{history.back()}catch(x){}}
