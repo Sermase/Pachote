@@ -563,7 +563,8 @@ function savePlan(p){
   let logs=[];try{logs=prev?logDiff(prev,next):[{act:'add',txt:`creó el grupo «${next.name}»${next.members.length?` con ${next.members.length} personas`:''}${next.expenses.length?` y ${next.expenses.length} movimientos`:''}`}]}catch(x){console.error(x)}
   const pm=!prev&&S.pendingMe&&next.members.find(m=>m.id===S.pendingMe);const who=pm?pm.name:logWho(next);logs.forEach(l=>l.who=who);
   const op=prev?ST.save(next,prev,logs):ST.create({...next,_log:logs,_me:{memberId:S.pendingMe||null}});S.pendingMe=null;
-  op.catch(e=>{console.error(e);toast(String(e.message||e).includes('perm')||String(e.code||'').includes('permission')?'No tienes permiso para cambiar este grupo.':'No se pudo guardar. Se reintentará al recuperar la conexión.')});
+  /* Si el historial fallase por lo que sea, el cambio se guarda igual sin su apunte: nunca se pierde un dato por el registro. */
+  op.catch(e=>{if(prev&&logs.length&&ST.save)return ST.save(next,prev,[]);throw e}).catch(e=>{console.error(e);toast(String(e.message||e).includes('perm')||String(e.code||'').includes('permission')?'No tienes permiso para cambiar este grupo.':'No se pudo guardar. Se reintentará al recuperar la conexión.')});
 }
 function removePlan(id){
   delete S.plans[id];if(S.current===id)S.current=null;render();
@@ -895,7 +896,7 @@ function openProfile(){
   },false);
 }
 /* Menú general: perfil, tema, información de Pachote y el resto de Istari Core. */
-const APP_VERSION='v12';
+const APP_VERSION='v13';
 function themeSeg(){return `<div class="seg" id="mtheme">${[['auto','Automático'],['light','☀️ Claro'],['dark','🌙 Oscuro']].map(([k,n])=>`<button data-k="${k}" aria-pressed="${(document.documentElement.dataset.theme||'auto')===k}">${n}</button>`).join('')}</div>`}
 function bindTheme(s){s.querySelectorAll('#mtheme button').forEach(b=>b.onclick=()=>{const k=b.dataset.k;if(k==='auto')delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=k;
   try{k==='auto'?localStorage.removeItem('pachote_theme'):localStorage.setItem('pachote_theme',k)}catch(x){}s.querySelectorAll('#mtheme button').forEach(x=>x.setAttribute('aria-pressed',x===b))})}
