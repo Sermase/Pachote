@@ -531,14 +531,20 @@ function splitWeighted(total,ids,weightOf){
 }
 /* Reparto exacto, sin redondear: se redondea una sola vez, al calcular los saldos finales. */
 function splitExact(total,ids,weightOf){const ws=ids.map(weightOf),W=ws.reduce((a,b)=>a+b,0);const out={};if(!(W>0)||!ids.length)return out;ids.forEach((id,i)=>out[id]=total*ws[i]/W);return out}
-/* Redondea a céntimos manteniendo la suma exacta (método del mayor resto). */
+/* Redondea a céntimos manteniendo la suma exacta (método del mayor resto).
+   Los céntimos sobrantes o que faltan solo se reparten entre quienes tienen decimales de verdad:
+   quien tiene un saldo exacto (por ejemplo 0, porque no participó) nunca recibe un céntimo de redondeo. */
 function roundKeepSum(obj,tgt){
-  const ks=Object.keys(obj);const target=tgt!=null?tgt:Math.round(ks.reduce((a,k)=>a+obj[k],0));const out={};let s=0;
-  ks.forEach(k=>{out[k]=Math.floor(obj[k]+1e-9);s+=out[k]});
-  const rest=ks.map(k=>[obj[k]-out[k],k]).sort((a,b)=>b[0]-a[0]||a[1].localeCompare(b[1]));
-  for(let i=0;i<target-s;i++)out[rest[i%rest.length][1]]++;
-  for(let i=0;i<s-target;i++)out[rest[rest.length-1-(i%rest.length)][1]]--;
-  return out;
+  const ks=Object.keys(obj);const EPS=1e-6;const out={};let s=0;
+  ks.forEach(k=>{const v=obj[k];const r=Math.round(v);out[k]=Math.abs(v-r)<EPS?r:Math.floor(v);s+=out[k]});
+  const target=tgt!=null?tgt:Math.round(ks.reduce((a,k)=>a+obj[k],0));
+  let diff=target-s;if(!diff){for(const k in out)out[k]=out[k]||0;return out}
+  const frac=k=>obj[k]-out[k];
+  const cand=ks.filter(k=>Math.abs(obj[k]-Math.round(obj[k]))>=EPS);
+  const pool=cand.length?cand:ks.filter(k=>Math.abs(obj[k])>=EPS).length?ks.filter(k=>Math.abs(obj[k])>=EPS):ks;
+  if(diff>0){const o=[...pool].sort((a,b)=>frac(b)-frac(a)||a.localeCompare(b));for(let i=0;i<diff;i++)out[o[i%o.length]]++}
+  else{const o=[...pool].sort((a,b)=>frac(a)-frac(b)||a.localeCompare(b));for(let i=0;i<-diff;i++)out[o[i%o.length]]--}
+  for(const k in out)out[k]=out[k]||0;return out;
 }
 /* Cuentas conjuntas: viven en la familia (h.joints=[{id,ids}]). Se usan como pagador con la clave 'j:<id>'. */
 function allJoints(p){const out=[];p.households.forEach(h=>(h.joints||[]).forEach(j=>out.push({...j,hid:h.id})));return out}
@@ -1329,7 +1335,10 @@ function famAccounts(p,hid){
   const h=p.households.find(x=>x.id===hid);const inv=new Set((h&&h.invited||[]).filter(id=>head&&id!==head.id&&ms.some(m=>m.id===id&&!isKid(m))));
   let gift=0;rows.forEach(r=>{if(r.net==null||!inv.has(r.m.id))return;const nn=r.aport;gift+=nn-r.net;r.net=nn;r.inv=true});
   if(gift){const hr=rows.find(r=>r.m===head);if(hr)hr.net-=gift}
-  const nets={};rows.filter(r=>r.net!=null).forEach(r=>nets[r.m.id]=r.net);const rn=roundKeepSum(nets,0);rows.forEach(r=>{if(r.net!=null)r.net=rn[r.m.id]});
+  /* El céntimo que pueda descuadrar al redondear dentro de la familia lo asume quien lleva la cuenta, nunca otro miembro. */
+  const nets={};rows.filter(r=>r.net!=null).forEach(r=>nets[r.m.id]=r.net);const rn=roundKeepSum(nets);
+  const res=-Object.values(rn).reduce((a,b)=>a+b,0);if(res&&head&&head.id in rn)rn[head.id]+=res;else if(res){const k=Object.keys(rn).sort((a,b)=>Math.abs(nets[b])-Math.abs(nets[a]))[0];if(k)rn[k]+=res}
+  rows.forEach(r=>{if(r.net!=null)r.net=rn[r.m.id]});
   /* Bolsillos: quienes comparten cuenta conjunta liquidan juntos dentro de la familia. */
   const par={};const find=x=>{while(par[x]&&par[x]!==x)x=par[x];return x};
   (h&&h.joints||[]).forEach(j=>{const ids=j.ids.filter(id=>ms.some(m=>m.id===id));for(let i=1;i<ids.length;i++){const a=find(ids[0]),b=find(ids[i]);if(a!==b)par[b]=a}});
