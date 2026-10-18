@@ -845,17 +845,24 @@ function mergeInto(cur,src){
 }
 function inviteLink(g){const t=ST&&ST.token?ST.token(g):'';return location.origin+location.pathname+'#join/'+g+'/'+t}
 /* ¿Quién eres? Se pregunta una vez por grupo y dispositivo; sirve para proponerte como pagador y para ver quién tiene acceso. */
-function askWho(force){
+function askWho(force,then){
   const p=plan();if(!p||!ST||!p.members.length||(!force&&p._me?.memberId))return;
   const k='pachote_asked_'+p.id;if(!force){try{if(sessionStorage.getItem(k))return;sessionStorage.setItem(k,'1')}catch(x){}}
   if(document.querySelector('#sheetRoot .scrim')&&!force)return;
   const pr=myProf();const nn=t=>String(t||'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   const cand=p.members.filter(isOn).filter(m=>!isKid(m));const sug=pr.name?cand.find(m=>nn(m.name)===nn(pr.name)):null;
   const ordered=sug?[sug,...cand.filter(m=>m!==sug)]:cand;
-  sheet(`<h2>🙋 ¿Quién eres en «${esc(p.name)}»?</h2><p class="hint">Así te propongo como pagador y ves tu saldo arriba. Puedes cambiarlo en ⚙️.</p>
+  const anon=!(ST.user&&ST.user()&&!ST.user().anon);
+  sheet(`<h2>🙋 ¿Quién eres en «${esc(p.name)}»?</h2><p class="hint">${then?'Antes de apuntar o cambiar nada, dinos quién eres: así queda en el historial quién hizo cada cosa.':'Así te propongo como pagador y ves tu saldo arriba.'} Solo se pregunta una vez por grupo en este móvil.</p>
     <div class="whog">${ordered.map(m=>`<button data-who="${m.id}" aria-pressed="${p._me?.memberId===m.id}" class="${m===sug&&!p._me?.memberId?'sug':''}">${avHTML(m,memberColor(p,m))}<span>${esc(m.name)}</span></button>`).join('')}</div>
-    <button class="btn sec" data-close>Ahora no</button>`,s=>{s.querySelector('[data-close]').onclick=closeSheet;
-    s.querySelectorAll('[data-who]').forEach(b=>b.onclick=()=>{const m=p.members.find(x=>x.id===b.dataset.who);ST.setMe(p.id,m.id).then(()=>{closeSheet();toast('¡Hola, '+m.name+'!');
+    <button class="ghost" id="wnot" style="align-self:center">No estoy en la lista</button>
+    <div id="wnotf" hidden style="display:flex;gap:8px"><input id="wnn" maxlength="40" placeholder="Tu nombre" value="${esc(pr.name||'')}" style="flex:1;border:1px solid var(--line);border-radius:11px;padding:10px 12px;background:var(--surface);height:46px"><button class="btn sm" id="wnok">Seguir</button></div>
+    ${anon&&ST.kind==='cloud'?`<div class="card" style="padding:10px 12px;gap:6px"><span class="hint" style="margin:0">💾 No hace falta cuenta. Pero si quieres no perder tus grupos al cambiar de móvil, guárdalos con Google.</span><button class="btn sm sec" id="wgoogle" style="align-self:flex-start">Guardar mis grupos con Google</button></div>`:anon?'<p class="hint" style="margin:0">💾 No hace falta cuenta. Si quieres conservar tus grupos al cambiar de móvil, puedes guardarlos con Google desde ☰ → Tu perfil.</p>':''}
+    <button class="btn sec" data-close>${then?'Cancelar':'Ahora no'}</button>`,s=>{s.querySelector('[data-close]').onclick=closeSheet;
+    s.querySelector('#wnot').onclick=()=>{s.querySelector('#wnotf').hidden=false;s.querySelector('#wnn').focus()};
+    s.querySelector('#wnok').onclick=()=>{const n=s.querySelector('#wnn').value.trim();if(!n)return s.querySelector('#wnn').focus();(ST.setProfile?ST.setProfile({...myProf(),name:n}):Promise.resolve()).then(()=>{closeSheet();toast('¡Hola, '+n+'!');if(then)setTimeout(then,60)}).catch(()=>toast('No se pudo guardar'))};
+    const wg=s.querySelector('#wgoogle');if(wg)wg.onclick=()=>ST.linkGoogle().then(r=>{toast(r==='linked'?'Listo: tus grupos quedan guardados en tu cuenta de Google':'Has entrado con tu cuenta de Google');render()}).catch(e=>toast(e.code==='auth/popup-closed-by-user'?'Cancelado':'No se pudo conectar con Google'));
+    s.querySelectorAll('[data-who]').forEach(b=>b.onclick=()=>{const m=p.members.find(x=>x.id===b.dataset.who);ST.setMe(p.id,m.id).then(()=>{const cur=S.plans[p.id];if(cur)cur._me={...(cur._me||{}),memberId:m.id};closeSheet();toast('¡Hola, '+m.name+'!');if(then)setTimeout(then,60);
       const pr=myProf();if(!pr.name&&ST.setProfile)ST.setProfile({name:m.name}).catch(()=>{});
       if(pr.photo&&!m.photo&&p._me?.role!=='viewer'){const np=clone(plan());const x=np.members.find(y=>y.id===m.id);if(x){x.photo=pr.photo;savePlan(np)}}}).catch(()=>toast('No se pudo guardar'))})},false);
 }
@@ -896,7 +903,7 @@ function openProfile(){
   },false);
 }
 /* Menú general: perfil, tema, información de Pachote y el resto de Istari Core. */
-const APP_VERSION='v13';
+const APP_VERSION='v14';
 function themeSeg(){return `<div class="seg" id="mtheme">${[['auto','Automático'],['light','☀️ Claro'],['dark','🌙 Oscuro']].map(([k,n])=>`<button data-k="${k}" aria-pressed="${(document.documentElement.dataset.theme||'auto')===k}">${n}</button>`).join('')}</div>`}
 function bindTheme(s){s.querySelectorAll('#mtheme button').forEach(b=>b.onclick=()=>{const k=b.dataset.k;if(k==='auto')delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=k;
   try{k==='auto'?localStorage.removeItem('pachote_theme'):localStorage.setItem('pachote_theme',k)}catch(x){}s.querySelectorAll('#mtheme button').forEach(x=>x.setAttribute('aria-pressed',x===b))})}
@@ -937,15 +944,18 @@ function openInfo(k){
   const [t,body]=T[k];
   sheet(`<h2>${t}</h2><div class="legal">${body}</div><button class="btn sec" data-back>Volver</button>`,s=>{s.querySelector('[data-back]').onclick=openMenu},false);
 }
-function guard(){if(plan()?._me?.role==='viewer'){toast('Tienes permiso de solo ver en este grupo.');return true}if(plan()?.closed){toast('El grupo está cerrado. Reábrelo para hacer cambios.');return true}return false}
+/* ¿Quién eres? obligatorio para escribir: así el historial siempre tiene nombre. Vale ser alguien del grupo o, si no estás en la lista, tu nombre de perfil. */
+function knownWriter(p){return !p||!p.members.length||(p._me?.memberId&&p.members.some(m=>m.id===p._me.memberId))||!!myProf().name}
+function guard(retry){if(plan()?._me?.role==='viewer'){toast('Tienes permiso de solo ver en este grupo.');return true}if(plan()?.closed){toast('El grupo está cerrado. Reábrelo para hacer cambios.');return true}
+  if(ST&&!knownWriter(plan())){askWho(true,retry||(()=>{}));return true}return false}
 function setTab(t){S.tab=t;try{localStorage.setItem('cf_tab2',t)}catch(e){}render();window.scrollTo({top:0})}
 
 document.addEventListener('click',ev=>{
   const b=ev.target.closest('[data-act]');if(!b)return;const a=b.dataset.act,v=b.dataset.v;
   if(a==='tab')setTab(v);else if(a==='newplan')openPlan();else if(a==='editplan')openPlan(plan().id);
   else if(a==='entry')openEntry(v);else if(a==='filter'){S.filter=v;render()}
-  else if(a==='copy')copyTx();else if(a==='settle'){if(!guard())settle(+v)}else if(a==='undo'){if(!guard())undoSettle(v)}
-  else if(a==='hh'){if(!guard())openHH(v)}else if(a==='goto')setTab(v);
+  else if(a==='copy')copyTx();else if(a==='settle'){if(!guard(()=>settle(+v)))settle(+v)}else if(a==='undo'){if(!guard(()=>undoSettle(v)))undoSettle(v)}
+  else if(a==='hh'){if(!guard(()=>openHH(v)))openHH(v)}else if(a==='goto')setTab(v);
   else if(a==='fam')openFamily(v);
   else if(a==='person')openPerson(v);
   else if(a==='open'){S.mq='';S.current=v;S.tab='movs';render();window.scrollTo({top:0});try{history.pushState({g:v},'','#g')}catch(x){}askWho()}
@@ -1678,7 +1688,7 @@ function openMember(id){
 
 /* Movimiento: gasto / ingreso / transferencia */
 function openEntry(id,pre){
-  if(guard())return;
+  if(guard(()=>openEntry(id,pre)))return;
   const p=plan();if(!p.members.length){setTab('gente');toast('Añade primero a la gente');return}
   const e=id?p.expenses.find(x=>x.id===id):null;
   const st={kind:e?kindOf(e):(pre?.kind||'gasto'),cat:e?.cat||'otros',mode:e?.mode||'peso',parts:new Set(e?(e.parts||[]):p.members.filter(isOn).map(m=>m.id)),
