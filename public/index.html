@@ -153,6 +153,18 @@ button.row:hover{background:var(--sunk)}
 .av.ph{background-size:cover!important;background-position:center!important;color:transparent!important}
 .meav{width:38px;height:38px;border-radius:50%;border:2px solid var(--surface);box-shadow:var(--shadow);display:grid;place-items:center;font-weight:800;color:#fff;background:var(--accent);padding:0;font-size:14px;flex:none;margin-left:8px}
 .gbanner .meav{border-color:rgba(255,255,255,.6);width:36px;height:36px}
+.meav.menu{background:var(--surface);color:var(--ink);border-color:var(--line)}
+.gbanner .meav.menu{background:rgba(255,255,255,.18);color:#fff}
+.mitem{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--surface);border:none;border-radius:14px;padding:12px 14px;color:inherit;text-decoration:none;font:inherit}
+.mitem .ico{font-size:20px;width:26px;text-align:center;flex:none}
+.mitem .mt{flex:1;min-width:0;display:flex;flex-direction:column}
+.mitem .mt small{color:var(--muted);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mitem .chev{color:var(--muted)}
+.mprof .av{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:800;flex:none}
+.mgroup{display:flex;flex-direction:column;gap:1px;border-radius:14px;overflow:hidden;background:var(--line)}
+.mgroup .mitem{border-radius:0}
+.mgh{background:var(--bg);font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:6px 2px 6px}
+.legal p{margin:0 0 10px;line-height:1.5;font-size:14.5px}.legal a{color:var(--accent)}
 .pfav{width:96px;height:96px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:800;font-size:34px;margin:0 auto;position:relative}
 .pfav .cam{position:absolute;right:-2px;bottom:-2px;width:34px;height:34px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;font-size:16px;border:3px solid var(--bg)}
 .whog{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px}
@@ -794,8 +806,9 @@ function askWho(force){
 }
 /* Perfil: nombre y foto de quien usa este dispositivo (o su cuenta de Google). La foto se copia a la persona que eres en cada grupo. */
 function myProf(){return (ST&&ST.profile&&ST.profile())||{}}
-function meButton(){const pr=myProf();const u=ST&&ST.user&&ST.user();
-  return `<button class="meav${pr.photo?' ph':''}" data-act="profile" aria-label="Tu perfil" title="Tu perfil" style="${pr.photo?`background:url('${esc(pr.photo)}') center/cover`:''}">${pr.photo?'':pr.name?esc(initials(pr.name)):'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>'}</button>`}
+function meButton(){const pr=myProf();const u=(ST&&ST.user&&ST.user())||{anon:true};const known=pr.photo||pr.name||!u.anon;
+  if(!known)return `<button class="meav menu" data-act="menu" aria-label="Menú" title="Menú"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>`;
+  return `<button class="meav${pr.photo?' ph':''}" data-act="menu" aria-label="Menú y perfil" title="Menú y perfil" style="${pr.photo?`background:url('${esc(pr.photo)}') center/cover`:''}">${pr.photo?'':esc(initials(pr.name||u.name||u.email||'?'))}</button>`}
 /* Lee una imagen, la recorta en cuadrado y la deja pequeña (128 px, ~6 KB) para guardarla con el grupo. */
 function pickPhoto(cb){const fi=document.createElement('input');fi.type='file';fi.accept='image/*';
   fi.onchange=()=>{const f=fi.files[0];if(!f)return;const url=URL.createObjectURL(f);const img=new Image();
@@ -810,7 +823,6 @@ function openProfile(){
   sheet(`<h2>Tu perfil</h2>
     <button class="pfav${photo?' ph':''}" id="pfph" aria-label="Cambiar foto" style="border:none;padding:0;${photo?`background:url('${esc(photo)}') center/cover`:'background:var(--accent)'}">${photo?'':esc(initials(pr.name||'?'))}<span class="cam">📷</span></button>
     <div style="display:flex;gap:8px;justify-content:center"><button class="ghost" id="pfch">${photo?'Cambiar foto':'Poner foto'}</button><button class="ghost" id="pfrm" ${photo?'':'hidden'}>Quitar foto</button></div>
-    <div class="field"><span class="flabel">Tema</span><div class="seg" id="pftheme">${[['auto','Automático'],['light','☀️ Claro'],['dark','🌙 Oscuro']].map(([k,n])=>`<button data-k="${k}" aria-pressed="${(document.documentElement.dataset.theme||'auto')===k}">${n}</button>`).join('')}</div></div>
     <div class="field"><label for="pfname">Tu nombre</label><input id="pfname" maxlength="40" placeholder="¿Cómo te llamas?" value="${esc(pr.name||'')}" autocomplete="given-name"></div>
     <p class="hint" style="margin-top:-6px">Tu foto aparece en los grupos donde has dicho quién eres${mine.length?`: ${mine.map(p=>`<b>${esc(p.members.find(m=>m.id===p._me.memberId).name)}</b> en «${esc(p.name)}»`).join(', ')}`:''}.</p>
     <div class="actions"><button class="btn sec" data-close>Cancelar</button><button class="btn" id="pfsave">Guardar</button></div>
@@ -821,14 +833,54 @@ function openProfile(){
     const paint=()=>{const b=$('#pfph');b.style.background=photo?`url('${photo}') center/cover`:'var(--accent)';b.innerHTML=(photo?'':esc(initials($('#pfname').value||'?')))+'<span class="cam">📷</span>';$('#pfrm').hidden=!photo;$('#pfch').textContent=photo?'Cambiar foto':'Poner foto'};
     const pick=()=>pickPhoto(d=>{photo=d;paint()});$('#pfph').onclick=pick;$('#pfch').onclick=pick;$('#pfrm').onclick=()=>{photo=null;paint()};
     $('#pfname').oninput=paint;
-    s.querySelectorAll('#pftheme button').forEach(b=>b.onclick=()=>{const k=b.dataset.k;if(k==='auto')delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=k;
-      try{k==='auto'?localStorage.removeItem('pachote_theme'):localStorage.setItem('pachote_theme',k)}catch(x){}s.querySelectorAll('#pftheme button').forEach(x=>x.setAttribute('aria-pressed',x===b))});
     $('#pfsave').onclick=async()=>{const name=$('#pfname').value.trim().slice(0,40);const was=pr.photo||null;
       try{await ST.setProfile({name,photo})}catch(x){return toast('No se pudo guardar el perfil')}
       if(photo!==was)myGroupsAsMember().filter(p=>p._me.role!=='viewer'&&!p.closed).forEach(p=>{const np=clone(p);const m=np.members.find(x=>x.id===p._me.memberId);if(!m||m.photo===photo)return;if(photo)m.photo=photo;else delete m.photo;savePlan(np)});
       closeSheet();render();toast('Perfil guardado')};
     const gg=$('#pfgoogle');if(gg)gg.onclick=()=>ST.linkGoogle().then(r=>{toast(r==='linked'?'Listo: tus grupos quedan guardados en tu cuenta de Google':'Has entrado con tu cuenta de Google');closeSheet();render()}).catch(e=>toast(e.code==='auth/popup-closed-by-user'?'Cancelado':'No se pudo conectar con Google'));
   },false);
+}
+/* Menú general: perfil, tema, información de Pachote y el resto de Istari Core. */
+const APP_VERSION='v11';
+function themeSeg(){return `<div class="seg" id="mtheme">${[['auto','Automático'],['light','☀️ Claro'],['dark','🌙 Oscuro']].map(([k,n])=>`<button data-k="${k}" aria-pressed="${(document.documentElement.dataset.theme||'auto')===k}">${n}</button>`).join('')}</div>`}
+function bindTheme(s){s.querySelectorAll('#mtheme button').forEach(b=>b.onclick=()=>{const k=b.dataset.k;if(k==='auto')delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=k;
+  try{k==='auto'?localStorage.removeItem('pachote_theme'):localStorage.setItem('pachote_theme',k)}catch(x){}s.querySelectorAll('#mtheme button').forEach(x=>x.setAttribute('aria-pressed',x===b))})}
+function openMenu(){
+  const pr=myProf();const u=(ST&&ST.user&&ST.user())||{anon:true};
+  const item=(act,ico,t,sub,ext)=>ext?`<a class="mitem" href="${ext}" target="_blank" rel="noopener"><span class="ico">${ico}</span><span class="mt"><b>${t}</b>${sub?`<small>${sub}</small>`:''}</span><span class="chev">↗</span></a>`
+    :`<button class="mitem" data-m="${act}"><span class="ico">${ico}</span><span class="mt"><b>${t}</b>${sub?`<small>${sub}</small>`:''}</span><span class="chev">›</span></button>`;
+  sheet(`<button class="mitem mprof" data-m="profile">${pr.photo?`<span class="av ph" style="background:url('${esc(pr.photo)}')"></span>`:`<span class="av" style="background:var(--accent)">${esc(initials(pr.name||u.name||'?'))}</span>`}
+      <span class="mt"><b>${esc(pr.name||u.name||'Tu perfil')}</b><small>${u.anon?(pr.name?'Sin cuenta · toca para editar':'Pon tu nombre y tu foto'):esc(u.email)}</small></span><span class="chev">›</span></button>
+    <div class="field"><span class="flabel">Tema</span>${themeSeg()}</div>
+    <div><div class="mgh">Pachote</div><div class="mgroup">
+      ${item('about','💡','Acerca de Pachote','Qué es y cómo funciona')}
+      ${item('privacy','🔒','Privacidad','Qué datos se guardan y dónde')}
+      ${item('terms','📄','Términos de uso','')}</div></div>
+    <div><div class="mgh">Istari Core</div><div class="mgroup">
+      ${item('','🍽️','Listopic','Listas y opiniones de sitios para comer y visitar','https://listopic.es')}
+      ${item('','🧪','Istari Core','Quiénes somos y otros proyectos','https://listopic.es/istari-core')}
+      ${item('','✉️','Contacto','istaricore@gmail.com','mailto:istaricore@gmail.com?subject=Pachote')}</div></div>
+    <p class="hint" style="text-align:center;margin:0">Pachote ${APP_VERSION} · beta · hecho por Istari Core</p>`,s=>{
+    bindTheme(s);s.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{const m=b.dataset.m;if(m==='profile')openProfile();else openInfo(m)})},false);
+}
+function openInfo(k){
+  const T={
+  about:['💡 Acerca de Pachote',`<p>Pachote sirve para llevar las cuentas de un viaje, una casa compartida o una cena: quién ha pagado qué y quién debe a quién, con el mínimo de pagos para quedar en paz.</p>
+    <p>Lo que lo hace distinto: <b>familias que pagan como una unidad</b> aunque el gasto se calcule por persona, <b>niños con su peso</b> (×0,5, ×0,75…), cuentas conjuntas y cuentas internas de cada familia.</p>
+    <p><b>Cómo se usa:</b> crea un grupo, añade a la gente y comparte el link por WhatsApp. Cualquiera con el link entra sin registrarse y puede apuntar gastos. En «Saldos» verás quién paga a quién; «Pagar» apunta el pago cuando se hace.</p>
+    <p>Es un proyecto personal de <b>Istari Core</b>, en fase beta. Si algo falla o se te ocurre una mejora, escríbenos a <a href="mailto:istaricore@gmail.com?subject=Pachote">istaricore@gmail.com</a>.</p>`],
+  privacy:['🔒 Privacidad',`<p><b>Quién es responsable.</b> Istari Core (contacto: <a href="mailto:istaricore@gmail.com">istaricore@gmail.com</a>).</p>
+    <p><b>Qué se guarda.</b> Lo que apuntáis en cada grupo: nombre del grupo, nombres de las personas, familias, importes, conceptos y fechas de los movimientos. Si quieres, tu nombre y una foto pequeña de perfil. Para saber quién tiene acceso a cada grupo se usa un identificador anónimo de este dispositivo y, si conectas Google, tu correo.</p>
+    <p><b>Dónde.</b> En Google Firebase (base de datos Firestore y autenticación), y una copia en este dispositivo para que funcione sin conexión. Las preferencias (tema, pestaña, borradores) se quedan solo en el dispositivo.</p>
+    <p><b>Quién lo ve.</b> Solo quien tiene el link del grupo. Quien lo administra puede cambiar el link para que el anterior deje de servir y quitar el acceso a cualquier dispositivo.</p>
+    <p><b>Para qué.</b> Solo para que la app funcione. Sin publicidad, sin analítica de uso y sin ceder ni vender datos a nadie.</p>
+    <p><b>Borrar.</b> Quien administra un grupo puede borrarlo con todos sus movimientos desde ⚙️. Tu perfil lo cambias o vacías aquí. Para cualquier otra petición sobre tus datos (acceso, rectificación, supresión), escríbenos.</p>`],
+  terms:['📄 Términos de uso',`<p>Pachote es una herramienta gratuita para anotar y repartir gastos entre personas que se conocen. Se ofrece tal cual, en fase beta, y puede cambiar o tener fallos.</p>
+    <p>Los cálculos son una ayuda: revisad los importes antes de pagar. Pachote no mueve dinero ni es un servicio financiero; los pagos los hacéis vosotros por vuestra cuenta.</p>
+    <p>Cada grupo es responsable de lo que apunta. No uses Pachote para nada ilegal ni para guardar datos sensibles de otras personas. Comparte el link del grupo solo con quien deba entrar.</p>
+    <p>Haz copias (⚙️ → Copias y etapas → Exportar) si los datos te importan. Istari Core no se hace responsable de pérdidas de datos ni de desacuerdos entre los miembros de un grupo.</p>`]};
+  const [t,body]=T[k];
+  sheet(`<h2>${t}</h2><div class="legal">${body}</div><button class="btn sec" data-back>Volver</button>`,s=>{s.querySelector('[data-back]').onclick=openMenu},false);
 }
 function guard(){if(plan()?._me?.role==='viewer'){toast('Tienes permiso de solo ver en este grupo.');return true}if(plan()?.closed){toast('El grupo está cerrado. Reábrelo para hacer cambios.');return true}return false}
 function setTab(t){S.tab=t;try{localStorage.setItem('cf_tab2',t)}catch(e){}render();window.scrollTo({top:0})}
@@ -843,6 +895,7 @@ document.addEventListener('click',ev=>{
   else if(a==='person')openPerson(v);
   else if(a==='open'){S.mq='';S.current=v;S.tab='movs';render();window.scrollTo({top:0});try{history.pushState({g:v},'','#g')}catch(x){}askWho()}
   else if(a==='profile'){openProfile()}
+  else if(a==='menu'){openMenu()}
   else if(a==='feat'){if(guard())return;const np=clone(plan());np.features={...featOf(np),[v]:true};FEAT=featOf(np);savePlan(np);
     toast(v==='families'?'👪 Familias activadas':'🧸 Niños activados')}
   else if(a==='home'){S.current=null;render();window.scrollTo({top:0});if(history.state&&history.state.g)try{history.back()}catch(x){}}
@@ -1249,7 +1302,7 @@ function openPlan(id){
      <p class="hint">Quien abra el link entra al grupo sin registrarse y puede apuntar gastos. ${isAdm?'Si el link se filtra, «Cambiar link» invalida el anterior; quien ya está dentro sigue dentro.':''}</p>
      <div class="section-label" style="margin:6px 0 0">Dispositivos con acceso</div><div class="list" id="acclist"><div class="row"><span class="hint">Cargando…</span></div></div>
      <button class="ghost" id="pwho" style="align-self:flex-start">🙋 Cambiar quién soy yo</button>`)}
-   <button class="fsec rowbtn" data-act="profile" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:13px 14px;border:none;font:inherit;color:inherit"><span class="ico">👤</span><span class="st" style="flex:1;font-weight:700">Tu perfil, tema y cuenta</span><span class="ss">${esc(myProf().name||(acct.anon?'Sin cuenta':acct.email))} ›</span></button>
+   <button class="fsec rowbtn" data-act="menu" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:13px 14px;border:none;font:inherit;color:inherit"><span class="ico">👤</span><span class="st" style="flex:1;font-weight:700">Perfil, tema y más</span><span class="ss">${esc(myProf().name||(acct.anon?'Sin cuenta':acct.email))} ›</span></button>
    ${gsec('opciones','🧩','Opciones',[F.families?'Familias':'',F.kids?'Niños':''].filter(Boolean).join(' · ')||'Grupo sencillo',`
      <div style="display:flex;flex-wrap:wrap;gap:8px"><button class="toggle" data-pf="families" aria-pressed="${F.families}" ${p.closed?'disabled':''}>👪 Familias</button><button class="toggle" data-pf="kids" aria-pressed="${F.kids}" ${p.closed?'disabled':''}>🧸 Niños</button></div>
      <p class="hint">Para un grupo de amigos, apaga las dos y queda una lista sencilla donde cada uno salda lo suyo. No se borra nada al apagarlas.</p>
