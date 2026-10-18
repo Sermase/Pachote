@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="es"><head><meta charset="utf-8">
+<script>try{const t=localStorage.getItem('pachote_theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#2F3FD0">
 <meta name="description" content="Pachote: reparte gastos de grupo, viajes y casa, con familias y niños. Cuentas claras, a pachas.">
@@ -807,6 +808,7 @@ function openProfile(){
   sheet(`<h2>Tu perfil</h2>
     <button class="pfav${photo?' ph':''}" id="pfph" aria-label="Cambiar foto" style="border:none;padding:0;${photo?`background:url('${esc(photo)}') center/cover`:'background:var(--accent)'}">${photo?'':esc(initials(pr.name||'?'))}<span class="cam">📷</span></button>
     <div style="display:flex;gap:8px;justify-content:center"><button class="ghost" id="pfch">${photo?'Cambiar foto':'Poner foto'}</button><button class="ghost" id="pfrm" ${photo?'':'hidden'}>Quitar foto</button></div>
+    <div class="field"><span class="flabel">Tema</span><div class="seg" id="pftheme">${[['auto','Automático'],['light','☀️ Claro'],['dark','🌙 Oscuro']].map(([k,n])=>`<button data-k="${k}" aria-pressed="${(document.documentElement.dataset.theme||'auto')===k}">${n}</button>`).join('')}</div></div>
     <div class="field"><label for="pfname">Tu nombre</label><input id="pfname" maxlength="40" placeholder="¿Cómo te llamas?" value="${esc(pr.name||'')}" autocomplete="given-name"></div>
     <p class="hint" style="margin-top:-6px">Tu foto aparece en los grupos donde has dicho quién eres${mine.length?`: ${mine.map(p=>`<b>${esc(p.members.find(m=>m.id===p._me.memberId).name)}</b> en «${esc(p.name)}»`).join(', ')}`:''}.</p>
     <div class="actions"><button class="btn sec" data-close>Cancelar</button><button class="btn" id="pfsave">Guardar</button></div>
@@ -817,6 +819,8 @@ function openProfile(){
     const paint=()=>{const b=$('#pfph');b.style.background=photo?`url('${photo}') center/cover`:'var(--accent)';b.innerHTML=(photo?'':esc(initials($('#pfname').value||'?')))+'<span class="cam">📷</span>';$('#pfrm').hidden=!photo;$('#pfch').textContent=photo?'Cambiar foto':'Poner foto'};
     const pick=()=>pickPhoto(d=>{photo=d;paint()});$('#pfph').onclick=pick;$('#pfch').onclick=pick;$('#pfrm').onclick=()=>{photo=null;paint()};
     $('#pfname').oninput=paint;
+    s.querySelectorAll('#pftheme button').forEach(b=>b.onclick=()=>{const k=b.dataset.k;if(k==='auto')delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=k;
+      try{k==='auto'?localStorage.removeItem('pachote_theme'):localStorage.setItem('pachote_theme',k)}catch(x){}s.querySelectorAll('#pftheme button').forEach(x=>x.setAttribute('aria-pressed',x===b))});
     $('#pfsave').onclick=async()=>{const name=$('#pfname').value.trim().slice(0,40);const was=pr.photo||null;
       try{await ST.setProfile({name,photo})}catch(x){return toast('No se pudo guardar el perfil')}
       if(photo!==was)myGroupsAsMember().filter(p=>p._me.role!=='viewer'&&!p.closed).forEach(p=>{const np=clone(p);const m=np.members.find(x=>x.id===p._me.memberId);if(!m||m.photo===photo)return;if(photo)m.photo=photo;else delete m.photo;savePlan(np)});
@@ -1234,7 +1238,7 @@ function openPlan(id){
      <p class="hint">Quien abra el link entra al grupo sin registrarse y puede apuntar gastos. ${isAdm?'Si el link se filtra, «Cambiar link» invalida el anterior; quien ya está dentro sigue dentro.':''}</p>
      <div class="section-label" style="margin:6px 0 0">Dispositivos con acceso</div><div class="list" id="acclist"><div class="row"><span class="hint">Cargando…</span></div></div>
      <button class="ghost" id="pwho" style="align-self:flex-start">🙋 Cambiar quién soy yo</button>`)}
-   <button class="fsec rowbtn" data-act="profile" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:13px 14px;border:none;font:inherit;color:inherit"><span class="ico">👤</span><span class="st" style="flex:1;font-weight:700">Tu perfil y cuenta</span><span class="ss">${esc(myProf().name||(acct.anon?'Sin cuenta':acct.email))} ›</span></button>
+   <button class="fsec rowbtn" data-act="profile" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:13px 14px;border:none;font:inherit;color:inherit"><span class="ico">👤</span><span class="st" style="flex:1;font-weight:700">Tu perfil, tema y cuenta</span><span class="ss">${esc(myProf().name||(acct.anon?'Sin cuenta':acct.email))} ›</span></button>
    ${gsec('opciones','🧩','Opciones',[F.families?'Familias':'',F.kids?'Niños':''].filter(Boolean).join(' · ')||'Grupo sencillo',`
      <div style="display:flex;flex-wrap:wrap;gap:8px"><button class="toggle" data-pf="families" aria-pressed="${F.families}" ${p.closed?'disabled':''}>👪 Familias</button><button class="toggle" data-pf="kids" aria-pressed="${F.kids}" ${p.closed?'disabled':''}>🧸 Niños</button></div>
      <p class="hint">Para un grupo de amigos, apaga las dos y queda una lista sencilla donde cada uno salda lo suyo. No se borra nada al apagarlas.</p>
