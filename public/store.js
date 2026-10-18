@@ -4,11 +4,12 @@
      groups/{gid}                     núcleo del plan (gente, familias, opciones) + owner + inviteToken
      groups/{gid}/movs/{mid}          un documento por movimiento (así dos personas pueden apuntar a la vez)
      groups/{gid}/access/{uid}        dispositivos con acceso { role, memberId, token, joined, label }
+     groups/{gid}/log/{id}            historial de cambios { at, uid, who, act, txt, snap? } (no se edita ni se borra)
    Con ?mock en la URL usa un almacén simulado en este navegador (para probar sin Firebase). */
 const FB='https://www.gstatic.com/firebasejs/10.12.2/';
 const clean=o=>JSON.parse(JSON.stringify(o));
 const rid=(n=20)=>{const a='abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';const r=crypto.getRandomValues(new Uint8Array(n));return [...r].map(x=>a[x%a.length]).join('')};
-const CORE_SKIP=new Set(['expenses','_me','_role','_v','id']);
+const CORE_SKIP=new Set(['expenses','_me','_role','_v','_log','id']);
 const coreOf=p=>{const o={};for(const k in p)if(!CORE_SKIP.has(k))o[k]=p[k];return clean(o)};
 /* Solo las claves de la ficha del grupo que han cambiado (sin contar «updated»), para no pisar cambios de otros. */
 const changedKeys=(c1,c0)=>{const ks=new Set([...Object.keys(c1||{}),...Object.keys(c0||{})]);return [...ks].filter(k=>!['updated','owner','inviteToken','_v'].includes(k)&&JSON.stringify(c1[k])!==JSON.stringify((c0||{})[k]))};
@@ -48,10 +49,13 @@ async function firebaseStore(){
       await F.setDoc(gref(g),core);
       await F.setDoc(aref(g,uid()),{role:'admin',memberId:p._me?.memberId||null,joined:Date.now(),label:navigator.userAgent.slice(0,80)});
       await F.setDoc(uref(uid()),{groups:{[g]:{joined:Date.now()}}},{merge:true});
+      if(p._log)for(const l of p._log)await F.addDoc(F.collection(db,'groups',g,'log'),{...clean(l),uid:uid(),at:F.serverTimestamp()}).catch(()=>{});
       const ex=clean(p.expenses||[]);for(let i=0;i<ex.length;i+=400){const b=F.writeBatch(db);ex.slice(i,i+400).forEach(e=>b.set(mref(g,e.id),e));await b.commit()}
     },
-    async save(p,prev){
+    async save(p,prev,logs){
       const g=p.id;const b=F.writeBatch(db);let n=0;
+      /* El historial va en el mismo lote: o se guarda el cambio con su apunte, o nada. */
+      (logs||[]).slice(0,40).forEach(l=>{b.set(F.doc(F.collection(db,'groups',g,'log')),{...clean(l),uid:uid(),at:F.serverTimestamp()})});
       const c1=coreOf(p),c0=prev?coreOf(prev):{};const ck=changedKeys(c1,c0);
       if(ck.length){const up={updated:Date.now()};ck.forEach(k=>up[k]=k in c1?c1[k]:F.deleteField());b.update(gref(g),up);n++}
       const old=Object.fromEntries((prev?.expenses||[]).map(e=>[e.id,JSON.stringify(e)]));const now=new Set();
@@ -60,8 +64,8 @@ async function firebaseStore(){
       if(n)await b.commit();
     },
     async remove(g){
-      const ms=await F.getDocs(F.collection(db,'groups',g,'movs'));const as=await F.getDocs(F.collection(db,'groups',g,'access'));
-      const refs=[...ms.docs.map(d=>d.ref),...as.docs.filter(d=>d.id!==uid()).map(d=>d.ref)];
+      const ms=await F.getDocs(F.collection(db,'groups',g,'movs'));const as=await F.getDocs(F.collection(db,'groups',g,'access'));const ls=await F.getDocs(F.collection(db,'groups',g,'log')).catch(()=>({docs:[]}));
+      const refs=[...ms.docs.map(d=>d.ref),...ls.docs.map(d=>d.ref),...as.docs.filter(d=>d.id!==uid()).map(d=>d.ref)];
       for(let i=0;i<refs.length;i+=400){const b=F.writeBatch(db);refs.slice(i,i+400).forEach(r=>b.delete(r));await b.commit()}
       await F.deleteDoc(gref(g));await F.deleteDoc(aref(g,uid())).catch(()=>{});
       await F.updateDoc(uref(uid()),{['groups.'+g]:F.deleteField()}).catch(()=>{});
@@ -73,6 +77,7 @@ async function firebaseStore(){
       await F.setDoc(uref(uid()),{groups:{[g]:{joined:Date.now()}}},{merge:true});
     },
     setMe:(g,memberId)=>F.updateDoc(aref(g,uid()),{memberId}),
+    watchLog:(g,cb)=>F.onSnapshot(F.query(F.collection(db,'groups',g,'log'),F.orderBy('at','desc'),F.limit(300)),s=>cb(s.docs.map(d=>{const x=d.data();return {...x,id:d.id,at:x.at&&x.at.toMillis?x.at.toMillis():Date.now()}})),()=>cb(null)),
     watchAccess:(g,cb)=>F.onSnapshot(F.collection(db,'groups',g,'access'),s=>cb(s.docs.map(d=>({uid:d.id,...d.data()}))),()=>cb([])),
     setRole:(g,u,role)=>F.updateDoc(aref(g,u),{role}),
     kick:(g,u)=>F.deleteDoc(aref(g,u)),
@@ -104,20 +109,21 @@ function mockStore(){
   const saveDb=d=>{localStorage.setItem(K,JSON.stringify(d));setTimeout(fire,0)};
   let me=sessionStorage.getItem('pachote_mock_uid');if(!me){me='u_'+rid(8);sessionStorage.setItem('pachote_mock_uid',me)}
   let cb=()=>{},pcb=()=>{},lastProf='null';const fire=()=>{const d=load();const pr=JSON.stringify(d.users[me]?.profile||null);if(pr!==lastProf){lastProf=pr;pcb(JSON.parse(pr))}const gs=(d.users[me]&&d.users[me].groups)||{};const out={};
-    for(const g in gs){const G=d.groups[g];if(!G||!G.access[me])continue;out[g]={...clean(G.core),id:g,expenses:Object.values(G.movs).sort((a,b)=>(a.created||0)-(b.created||0)),_me:G.access[me]}}cb(out);accCbs.forEach(([g,f])=>{const G=load().groups[g];f(G?Object.entries(G.access).map(([u,a])=>({uid:u,...a})):[])})};
-  const accCbs=[];window.addEventListener('storage',e=>{if(e.key===K)fire()});
+    for(const g in gs){const G=d.groups[g];if(!G||!G.access[me])continue;out[g]={...clean(G.core),id:g,expenses:Object.values(G.movs).sort((a,b)=>(a.created||0)-(b.created||0)),_me:G.access[me]}}cb(out);logCbs.forEach(([g,f])=>f());accCbs.forEach(([g,f])=>{const G=load().groups[g];f(G?Object.entries(G.access).map(([u,a])=>({uid:u,...a})):[])})};
+  const accCbs=[],logCbs=[];window.addEventListener('storage',e=>{if(e.key===K)fire()});
   const can=(G,role)=>G&&G.access[me]&&(role==='admin'?G.access[me].role==='admin':['admin','editor'].includes(G.access[me].role));
   return {
     kind:'mock',user:()=>({uid:me,anon:true,email:'',name:''}),
     watch(f){cb=f;setTimeout(fire,0);return()=>{}},
-    async create(p){const d=load();d.groups[p.id]={core:{...coreOf(p),owner:me,inviteToken:rid(24)},movs:Object.fromEntries((p.expenses||[]).map(e=>[e.id,clean(e)])),access:{[me]:{role:'admin',memberId:p._me?.memberId||null,joined:Date.now(),label:'Este navegador'}}};
+    async create(p){const d=load();d.groups[p.id]={log:(p._log||[]).map(l=>({...clean(l),uid:me,at:Date.now(),id:rid(10)})),core:{...coreOf(p),owner:me,inviteToken:rid(24)},movs:Object.fromEntries((p.expenses||[]).map(e=>[e.id,clean(e)])),access:{[me]:{role:'admin',memberId:p._me?.memberId||null,joined:Date.now(),label:'Este navegador'}}};
       (d.users[me]??={groups:{}}).groups[p.id]={joined:Date.now()};saveDb(d)},
-    async save(p,prev){const d=load();const G=d.groups[p.id];if(!can(G,'edit'))throw new Error('perm');const c1=coreOf(p),c0=prev?coreOf(prev):{};changedKeys(c1,c0).forEach(k=>{if(k in c1)G.core[k]=c1[k];else delete G.core[k]});
+    async save(p,prev,logs){const d=load();const G=d.groups[p.id];if(!can(G,'edit'))throw new Error('perm');(G.log??=[]).push(...(logs||[]).map(l=>({...clean(l),uid:me,at:Date.now(),id:rid(10)})));const c1=coreOf(p),c0=prev?coreOf(prev):{};changedKeys(c1,c0).forEach(k=>{if(k in c1)G.core[k]=c1[k];else delete G.core[k]});
       const old=Object.fromEntries((prev?.expenses||[]).map(e=>[e.id,JSON.stringify(e)]));const now=new Set();for(const e of p.expenses||[]){now.add(e.id);if(old[e.id]!==JSON.stringify(e))G.movs[e.id]=clean(e)}for(const id of (prev?.expenses||[]).map(e=>e.id))if(!now.has(id))delete G.movs[id];saveDb(d)},
     async remove(g){const d=load();if(!can(d.groups[g],'admin'))throw new Error('perm');delete d.groups[g];delete d.users[me].groups[g];saveDb(d)},
     async leave(g){const d=load();delete d.groups[g]?.access[me];delete d.users[me]?.groups[g];saveDb(d)},
     async join(g,token){const d=load();const G=d.groups[g];if(!G||G.core.inviteToken!==token)throw new Error('token');G.access[me]??={role:'editor',token,memberId:null,joined:Date.now(),label:'Otro navegador'};(d.users[me]??={groups:{}}).groups[g]={joined:Date.now()};saveDb(d)},
     async setMe(g,memberId){const d=load();d.groups[g].access[me].memberId=memberId;saveDb(d)},
+    watchLog(g,f){const run=()=>f([...(load().groups[g]?.log||[])].reverse());const w=[g,run];logCbs.push(w);setTimeout(run,0);return()=>{const i=logCbs.indexOf(w);if(i>=0)logCbs.splice(i,1)}},
     watchAccess(g,f){accCbs.push([g,f]);setTimeout(fire,0);return()=>{const i=accCbs.findIndex(x=>x[1]===f);if(i>=0)accCbs.splice(i,1)}},
     async setRole(g,u,role){const d=load();if(!can(d.groups[g],'admin'))throw new Error('perm');d.groups[g].access[u].role=role;saveDb(d)},
     async kick(g,u){const d=load();if(!can(d.groups[g],'admin'))throw new Error('perm');delete d.groups[g].access[u];saveDb(d)},

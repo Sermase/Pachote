@@ -32,6 +32,15 @@ service cloud.firestore {
         allow write: if canEdit(gid);
       }
 
+      // Historial de cambios: cualquiera que pueda apuntar añade entradas a su nombre; nadie las edita.
+      // Solo se borran al borrar el grupo entero (lo hace un administrador).
+      match /log/{lid} {
+        allow read: if isMember(gid);
+        allow create: if canEdit(gid) && request.resource.data.uid == request.auth.uid && request.resource.data.at == request.time;
+        allow update: if false;
+        allow delete: if isAdmin(gid);
+      }
+
       // Dispositivos con acceso.
       match /access/{uid} {
         allow read: if isMember(gid);

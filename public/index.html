@@ -165,6 +165,11 @@ button.row:hover{background:var(--sunk)}
 .mgroup .mitem{border-radius:0}
 .mgh{background:var(--bg);font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:6px 2px 6px}
 .legal p{margin:0 0 10px;line-height:1.5;font-size:14.5px}.legal a{color:var(--accent)}
+.loglist{display:flex;flex-direction:column;gap:0;max-height:60vh;overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.lg{display:flex;gap:10px;padding:9px 12px;border-bottom:1px solid var(--line);font-size:13.5px;align-items:flex-start}
+.lg:last-child{border-bottom:none}.lg .li{font-size:16px;line-height:1.2;flex:none;width:20px;text-align:center}
+.lg .lt{flex:1;min-width:0;overflow-wrap:anywhere}.lg .lm{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.lg button{flex:none;font-size:12.5px}
 .pfav{width:96px;height:96px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:800;font-size:34px;margin:0 auto;position:relative}
 .pfav .cam{position:absolute;right:-2px;bottom:-2px;width:34px;height:34px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;font-size:16px;border:3px solid var(--bg)}
 .whog{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px}
@@ -504,11 +509,60 @@ function applyChanges(fresh,base,np){
   (np.expenses||[]).forEach(e=>{if(b[e.id]===JSON.stringify(e))return;if(e.id in at)ex[at[e.id]]=clone(e);else ex.push(clone(e))});
   ex=ex.filter(e=>!(e.id in b)||nIds.has(e.id));out.expenses=ex;return out;
 }
+/* Historial: quién ha hecho qué en el grupo. Se calcula comparando cómo estaba y cómo queda. */
+function logWho(p){const me=p._me?.memberId&&p.members.find(m=>m.id===p._me.memberId);return (me&&me.name)||myProf().name||'Alguien sin identificar'}
+function movTxt(p,e){const k=kindOf(e);const nm=key=>key?unitName(p,key):'¿?';
+  if(k==='transfer')return `${e.settle?'pago':'transferencia'} ${nm(e.payer)} → ${nm(e.to)} de ${money(e.amount)}`;
+  return `${k==='ingreso'?'ingreso':'gasto'} «${e.desc||''}» de ${money(e.amount)} (${k==='ingreso'?'lo recibió':'pagó'} ${nm(e.payer)}, ${fmtShort(e.date)})`}
+function logDiff(a,b){
+  const out=[];const A=Object.fromEntries((a.expenses||[]).map(e=>[e.id,e])),B=Object.fromEntries((b.expenses||[]).map(e=>[e.id,e]));
+  const add=[],del=[],ed=[];
+  for(const id in B){if(!A[id])add.push(B[id]);else if(JSON.stringify(A[id])!==JSON.stringify(B[id]))ed.push([A[id],B[id]])}
+  for(const id in A)if(!B[id])del.push(A[id]);
+  const bulk=(arr,verb)=>arr.length>5?[{act:verb,txt:`${verb==='add'?'añadió':'borró'} ${arr.length} movimientos de golpe`,n:arr.length}]:null;
+  (bulk(add,'add')||add.map(e=>({act:'add',txt:'apuntó '+movTxt(b,e),mid:e.id}))).forEach(x=>out.push(x));
+  (bulk(del,'del')||del.map(e=>({act:'del',txt:'borró '+movTxt(a,e),mid:e.id,snap:e}))).forEach(x=>out.push(x));
+  ed.forEach(([x,y])=>{const ch=[];const nm=k=>k?unitName(b,k):'';
+    if(x.amount!==y.amount)ch.push(`importe ${money(x.amount)} → ${money(y.amount)}`);
+    if((x.desc||'')!==(y.desc||''))ch.push(`concepto «${x.desc||''}» → «${y.desc||''}»`);
+    if(x.payer!==y.payer)ch.push(`pagador ${nm(x.payer)} → ${nm(y.payer)}`);
+    if(x.to!==y.to)ch.push(`destinatario ${nm(x.to)} → ${nm(y.to)}`);
+    if(x.date!==y.date)ch.push(`fecha ${fmtShort(x.date)} → ${fmtShort(y.date)}`);
+    if(x.cat!==y.cat)ch.push(`tipo ${catOf(x.cat).n} → ${catOf(y.cat).n}`);
+    if(JSON.stringify([x.mode,x.parts,x.vals,x.custom])!==JSON.stringify([y.mode,y.parts,y.vals,y.custom]))ch.push('reparto');
+    if((x.dateStart||'')+(x.dateEnd||'')!==(y.dateStart||'')+(y.dateEnd||''))ch.push('periodo');
+    out.push({act:'edit',txt:`cambió ${movTxt(a,x).replace(/ \(.*\)$/,'')}: ${ch.join(', ')||'detalles'}`,mid:y.id,snap:x})});
+  const M=Object.fromEntries((a.members||[]).map(m=>[m.id,m])),N=Object.fromEntries((b.members||[]).map(m=>[m.id,m]));
+  const HN=(p,id)=>(p.households||[]).find(h=>h.id===id)?.name||'por su cuenta';
+  const nAdd=(b.members||[]).filter(m=>!M[m.id]);if(nAdd.length)out.push({act:'people',txt:`añadió a ${nAdd.map(m=>m.name).join(', ')}`});
+  const nDel=(a.members||[]).filter(m=>!N[m.id]);if(nDel.length)out.push({act:'people',txt:`quitó a ${nDel.map(m=>m.name).join(', ')}`});
+  (b.members||[]).forEach(m=>{const o=M[m.id];if(!o)return;const ch=[];
+    if(o.name!==m.name)ch.push(`nombre «${o.name}» → «${m.name}»`);
+    if((o.hh||null)!==(m.hh||null))ch.push(`familia ${HN(a,o.hh)} → ${HN(b,m.hh)}`);
+    if((o.weight??1)!==(m.weight??1))ch.push(`peso ×${numToInput(o.weight??1)} → ×${numToInput(m.weight??1)}`);
+    if(!!o.kid!==!!m.kid&&(o.kid!=null||m.kid!=null))ch.push(m.kid?'pasa a niño':'pasa a adulto');
+    if(!!o.inactive!==!!m.inactive)ch.push(m.inactive?'inactivo':'activo');
+    if(JSON.stringify(o.kidsBy||null)!==JSON.stringify(m.kidsBy||null))ch.push('quién paga lo suyo');
+    if((o.photo||'')!==(m.photo||''))ch.push(m.photo?'foto nueva':'sin foto');
+    if(ch.length)out.push({act:'people',txt:`cambió a ${m.name}: ${ch.join(', ')}`})});
+  const HA=Object.fromEntries((a.households||[]).map(h=>[h.id,h])),HB=Object.fromEntries((b.households||[]).map(h=>[h.id,h]));
+  (b.households||[]).forEach(h=>{const o=HA[h.id];if(!o)out.push({act:'people',txt:`creó la familia «${h.name}»`});else{const ch=[];if(o.name!==h.name)ch.push(`nombre «${o.name}» → «${h.name}»`);
+    if(JSON.stringify([o.kidsBy,o.invited,o.joints])!==JSON.stringify([h.kidsBy,h.invited,h.joints]))ch.push('reglas de la familia');if(ch.length)out.push({act:'people',txt:`cambió la familia «${h.name}»: ${ch.join(', ')}`})}});
+  (a.households||[]).forEach(h=>{if(!HB[h.id])out.push({act:'people',txt:`borró la familia «${h.name}»`})});
+  if(a.name!==b.name)out.push({act:'group',txt:`renombró el grupo «${a.name}» → «${b.name}»`});
+  if((a.desc||'')!==(b.desc||''))out.push({act:'group',txt:'cambió la descripción del grupo'});
+  if(JSON.stringify(featOf(a))!==JSON.stringify(featOf(b))){const f=featOf(b);out.push({act:'group',txt:`cambió las opciones: familias ${f.families?'sí':'no'}, niños ${f.kids?'sí':'no'}`})}
+  if(JSON.stringify(a.kidsBy||null)!==JSON.stringify(b.kidsBy||null))out.push({act:'group',txt:'cambió quién paga lo de los niños (general)'});
+  if(!!a.closed!==!!b.closed)out.push({act:'group',txt:b.closed?'cerró el grupo':'reabrió el grupo'});
+  return out;
+}
 function savePlan(p){
   const prev=S.plans[p.id];const base=(prev&&S.hist[p.id]&&S.hist[p.id][p._v])||prev;
   const next=prev?applyChanges(prev,base,p):p;next.updated=Date.now();remember(next);S.plans[p.id]=next;render();
   if(!ST)return;
-  const op=prev?ST.save(next,prev):ST.create({...next,_me:{memberId:S.pendingMe||null}});S.pendingMe=null;
+  let logs=[];try{logs=prev?logDiff(prev,next):[{act:'add',txt:`creó el grupo «${next.name}»${next.members.length?` con ${next.members.length} personas`:''}${next.expenses.length?` y ${next.expenses.length} movimientos`:''}`}]}catch(x){console.error(x)}
+  const pm=!prev&&S.pendingMe&&next.members.find(m=>m.id===S.pendingMe);const who=pm?pm.name:logWho(next);logs.forEach(l=>l.who=who);
+  const op=prev?ST.save(next,prev,logs):ST.create({...next,_log:logs,_me:{memberId:S.pendingMe||null}});S.pendingMe=null;
   op.catch(e=>{console.error(e);toast(String(e.message||e).includes('perm')||String(e.code||'').includes('permission')?'No tienes permiso para cambiar este grupo.':'No se pudo guardar. Se reintentará al recuperar la conexión.')});
 }
 function removePlan(id){
@@ -841,7 +895,7 @@ function openProfile(){
   },false);
 }
 /* Menú general: perfil, tema, información de Pachote y el resto de Istari Core. */
-const APP_VERSION='v11';
+const APP_VERSION='v12';
 function themeSeg(){return `<div class="seg" id="mtheme">${[['auto','Automático'],['light','☀️ Claro'],['dark','🌙 Oscuro']].map(([k,n])=>`<button data-k="${k}" aria-pressed="${(document.documentElement.dataset.theme||'auto')===k}">${n}</button>`).join('')}</div>`}
 function bindTheme(s){s.querySelectorAll('#mtheme button').forEach(b=>b.onclick=()=>{const k=b.dataset.k;if(k==='auto')delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=k;
   try{k==='auto'?localStorage.removeItem('pachote_theme'):localStorage.setItem('pachote_theme',k)}catch(x){}s.querySelectorAll('#mtheme button').forEach(x=>x.setAttribute('aria-pressed',x===b))})}
@@ -1231,7 +1285,7 @@ function sheet(html,onMount,focus=true,tall=false){
   if(focus)setTimeout(()=>r.querySelector('input')?.focus(),60);
 }
 function escClose(e){if(e.key==='Escape')closeSheet()}
-function closeSheet(fromPop){const hk=S.onSheetClose;S.onSheetClose=null;if(hk)try{hk()}catch(x){}if(S.accUnsub){S.accUnsub();S.accUnsub=null}const r=document.getElementById('sheetRoot');const had=!!r.innerHTML;r.innerHTML='';document.removeEventListener('keydown',escClose);
+function closeSheet(fromPop){const hk=S.onSheetClose;S.onSheetClose=null;if(hk)try{hk()}catch(x){}if(S.accUnsub){S.accUnsub();S.accUnsub=null}if(S.logUnsub){S.logUnsub();S.logUnsub=null}const r=document.getElementById('sheetRoot');const had=!!r.innerHTML;r.innerHTML='';document.removeEventListener('keydown',escClose);
   if(had&&fromPop!==true&&history.state&&history.state.sheet){S.skipPop=(S.skipPop||0)+1;try{history.back()}catch(x){}}}
 function swipeClose(sh){
   if(!sh)return;let y0=null,dy=0,on=false,t0=0,lastY=0,lastT=0,vel=0;
@@ -1309,6 +1363,7 @@ function openPlan(id){
      ${F.kids&&p.members.some(isKid)?`<div class="field"><label for="pkids">Gastos de los niños (general del grupo)</label>
      <select id="pkids" ${p.closed?'disabled':''}>${(F.families?KIDS_MODES.filter(x=>x[0]!=='some'):[['none','Cada niño paga lo suyo'],['group','Todos los adultos del grupo']]).map(([k,n])=>`<option value="${k}" ${(normRule(p.kidsBy)?.mode||(F.families?'head':'none'))===k?'selected':''}>${n}</option>`).join('')}</select>
      <span class="hint">Se aplica a todos los niños salvo que su familia o el propio niño tengan otra opción.</span></div>`:''}`)}
+   ${gsec('historial','🕓','Historial de cambios','Quién hizo qué',`<div id="loglist" class="loglist"><p class="hint">Cargando…</p></div>`)}
    ${gsec('copias','🗂️','Copias y etapas','',`<div class="menu" id="pmenu">
      ${p.closed?'':`<button data-m="etapa">Cerrar etapa y seguir con la misma gente<small>Guarda los ${ops} movimientos actuales en un grupo cerrado y deja este limpio para lo siguiente.</small></button>`}
      <button data-m="gente">Nuevo grupo con la misma gente<small>Copia personas, familias y pesos, sin movimientos.</small></button>
@@ -1379,6 +1434,16 @@ function openPlan(id){
     const rg=$('#pregen');if(rg)rg.onclick=()=>{rg.disabled=true;ST.regenToken(p.id).then(()=>{toast('Link cambiado: el anterior ya no sirve');setTimeout(()=>{const l=$('#plink');if(l)l.value=inviteLink(p.id)},400)}).catch(()=>toast('No se pudo cambiar el link')).finally(()=>rg.disabled=false)};
     $('#pwho').onclick=()=>askWho(true);
     const gg=$('#pgoogle');if(gg)gg.onclick=()=>ST.linkGoogle().then(r=>{toast(r==='linked'?'Listo: tus grupos quedan guardados en tu cuenta de Google':'Has entrado con tu cuenta de Google');closeSheet();render()}).catch(e=>toast(e.code==='auth/popup-closed-by-user'?'Cancelado':'No se pudo conectar con Google'));
+    /* Historial: se carga al abrir la sección. */
+    const lgd=s.querySelector('details[data-gsec="historial"]');const loadLog=()=>{if(!ST||!ST.watchLog)return;if(S.logUnsub){S.logUnsub();S.logUnsub=null}S.logUnsub=ST.watchLog(p.id,list=>{const box=s.querySelector('#loglist');if(!box)return;
+      if(list==null){box.innerHTML='<p class="hint" style="padding:10px 12px">No se pudo cargar el historial.</p>';return}
+      if(!list.length){box.innerHTML='<p class="hint" style="padding:10px 12px">Aún no hay cambios registrados. Desde ahora, cada alta, cambio o borrado queda apuntado aquí con quién lo hizo y cuándo.</p>';return}
+      const IC={add:'➕',del:'🗑️',edit:'✏️',people:'👥',group:'⚙️'};const can=!plan()?.closed&&plan()?._me?.role!=='viewer';
+      box.innerHTML=list.map((l,i)=>`<div class="lg"><span class="li">${IC[l.act]||'•'}</span><span class="lt"><b>${esc(l.who||'Alguien')}</b> ${esc(l.txt||'')}<span class="lm">${esc(new Date(l.at).toLocaleString('es-ES',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}))}</span></span>${can&&l.snap&&(l.act==='del'||l.act==='edit')?`<button class="ghost" data-restore="${i}">${l.act==='del'?'Recuperar':'Deshacer'}</button>`:''}</div>`).join('');
+      box.querySelectorAll('[data-restore]').forEach(b=>b.onclick=()=>{const l=list[+b.dataset.restore];const np=clone(plan());const i=np.expenses.findIndex(e=>e.id===l.snap.id);
+        if(l.act==='del'&&i>=0)return toast('Ese movimiento ya está en el grupo');
+        if(i>=0)np.expenses[i]=clone(l.snap);else np.expenses.push(clone(l.snap));savePlan(np);toast(l.act==='del'?'Movimiento recuperado':'Cambio deshecho')})})};
+    if(lgd){lgd.addEventListener('toggle',()=>{if(lgd.open)loadLog()});if(lgd.open)loadLog()}
     if(ST&&ST.watchAccess){if(S.accUnsub)S.accUnsub();S.accUnsub=ST.watchAccess(p.id,list=>{const box=s.querySelector('#acclist');if(!box)return;const mine=ST.myUid();
       box.innerHTML=list.sort((a,b)=>(a.joined||0)-(b.joined||0)).map(a=>{const m=p.members.find(x=>x.id===a.memberId);const isMe=a.uid===mine;
         return `<div class="row"><div class="main"><div class="t">${m?esc(m.name):'Sin identificar'}${isMe?' <span class="chip">este dispositivo</span>':''}</div><div class="s">${a.role==='admin'?'Administrador':a.role==='viewer'?'Solo ver':'Puede apuntar'} · desde ${esc(new Date(a.joined||0).toLocaleDateString('es-ES',{day:'numeric',month:'short'}))}</div></div>
