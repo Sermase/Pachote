@@ -308,8 +308,10 @@ body.dragging .sub.kids.ek{padding:10px 8px;background:var(--accent-soft)}
 @media (prefers-reduced-motion:reduce){.sheet,.track .bub{animation:none}.zone{transition:none}}
 .sheet>*{flex-shrink:0}
 .sheet.tall{min-height:94%}
-.sheet.dragging{transition:none;animation:none}
-.sheet.snap{transition:transform .2s ease-out}
+.sheet.shown,.sheet.dragging{animation:none}
+.sheet.dragging{transition:none}
+.sheet.snap{transition:transform .22s cubic-bezier(.2,.8,.2,1)}
+.scrim.fading{transition:background-color .22s ease-out}
 .ssum .txt span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mchip.armed,.hgrip.armed{transform:scale(1.06);box-shadow:0 0 0 3px var(--accent-soft)}
 /* Calendario de rango */
@@ -1179,16 +1181,25 @@ function escClose(e){if(e.key==='Escape')closeSheet()}
 function closeSheet(fromPop){const hk=S.onSheetClose;S.onSheetClose=null;if(hk)try{hk()}catch(x){}if(S.accUnsub){S.accUnsub();S.accUnsub=null}const r=document.getElementById('sheetRoot');const had=!!r.innerHTML;r.innerHTML='';document.removeEventListener('keydown',escClose);
   if(had&&fromPop!==true&&history.state&&history.state.sheet){S.skipPop=(S.skipPop||0)+1;try{history.back()}catch(x){}}}
 function swipeClose(sh){
-  if(!sh)return;let y0=null,dy=0,on=false;
-  const skip=t=>t.closest('input,select,textarea,.rcal,.modes,.cols,.pchips');
-  sh.addEventListener('touchstart',e=>{if(e.touches.length!==1||skip(e.target)){y0=null;return}y0=e.touches[0].clientY;dy=0;on=sh.scrollTop<=0},{passive:true});
-  sh.addEventListener('touchmove',e=>{if(y0==null)return;dy=e.touches[0].clientY-y0;
-    if(!on){if(sh.scrollTop<=0&&dy>0){on=true;y0=e.touches[0].clientY;dy=0}else return}
-    if(dy<=0){sh.style.transform='';return}e.preventDefault();sh.classList.add('dragging');sh.style.transform=`translateY(${dy}px)`},{passive:false});
+  if(!sh)return;let y0=null,dy=0,on=false,t0=0,lastY=0,lastT=0,vel=0;
+  const scrim=sh.parentElement;const skip=t=>t.closest('input,select,textarea,.rcal,.modes,.cols,.pchips');
+  /* La animación de entrada solo una vez: si se reactivara al soltar, la hoja «saltaría» arriba antes de bajar. */
+  sh.addEventListener('animationend',()=>sh.classList.add('shown'),{once:true});setTimeout(()=>sh.classList.add('shown'),400);
+  const setDim=f=>{scrim.style.backgroundColor=`rgba(10,14,12,${(.45*f).toFixed(3)})`};
+  sh.addEventListener('touchstart',e=>{if(e.touches.length!==1||skip(e.target)){y0=null;return}y0=lastY=e.touches[0].clientY;t0=lastT=performance.now();dy=0;vel=0;on=sh.scrollTop<=0;sh.classList.remove('snap');scrim.classList.remove('fading')},{passive:true});
+  sh.addEventListener('touchmove',e=>{if(y0==null)return;const y=e.touches[0].clientY,t=performance.now();dy=y-y0;
+    if(!on){if(sh.scrollTop<=0&&dy>0){on=true;y0=y;dy=0}else return}
+    if(t>lastT)vel=(y-lastY)/(t-lastT);lastY=y;lastT=t;
+    if(dy<=0){sh.style.transform='';setDim(1);return}e.preventDefault();sh.classList.add('shown','dragging');
+    sh.style.transform=`translate3d(0,${dy}px,0)`;setDim(Math.max(0,1-dy/(sh.offsetHeight||600)))},{passive:false});
   sh.addEventListener('touchend',()=>{if(y0==null)return;y0=null;sh.classList.remove('dragging');
-    if(on&&dy>110){sh.classList.add('snap');sh.style.transform='translateY(100%)';setTimeout(closeSheet,180)}
-    else if(dy>0){sh.classList.add('snap');sh.style.transform='';setTimeout(()=>sh.classList.remove('snap'),220)}on=false;dy=0});
+    const close=on&&(dy>Math.min(140,(sh.offsetHeight||600)*.3)||(dy>40&&vel>0.6));
+    if(dy>0){sh.classList.add('snap');scrim.classList.add('fading');
+      if(close){sh.style.transform='translate3d(0,100%,0)';setDim(0);let gone=false;const fin=()=>{if(gone)return;gone=true;closeSheet()};sh.addEventListener('transitionend',fin,{once:true});setTimeout(fin,300)}
+      else{sh.style.transform='';setDim(1);setTimeout(()=>{sh.classList.remove('snap');scrim.classList.remove('fading')},260)}}
+    on=false;dy=0});
 }
+
 function toast(t){const el=document.getElementById('toast');el.textContent=t;el.hidden=false;clearTimeout(toast._t);toast._t=setTimeout(()=>el.hidden=true,2600)}
 function askDel(box,msg,fn){box.innerHTML=`<div class="confirm">${esc(msg)}<div class="actions"><button class="btn sec" data-no>No, volver</button><button class="btn" style="background:var(--neg);color:#fff" data-yes>Sí, borrar</button></div></div>`;
   box.querySelector('[data-no]').onclick=closeSheet;box.querySelector('[data-yes]').onclick=fn}
