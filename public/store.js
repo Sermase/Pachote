@@ -29,21 +29,30 @@ async function firebaseStore(){
   if(!user)throw new Error('auth');
   const uid=()=>auth.currentUser.uid;
   const gref=g=>F.doc(db,'groups',g),mref=(g,m)=>F.doc(db,'groups',g,'movs',m),aref=(g,u)=>F.doc(db,'groups',g,'access',u),uref=u=>F.doc(db,'users',u);
-  const subs={};let myGroups={};let onPlans=()=>{};const plans={};let myProfile=null,onProf=()=>{};
+  const subs={};let myGroups={};let rejoinTried=false;let onPlans=()=>{};const plans={};let myProfile=null,onProf=()=>{};
   const emit=()=>onPlans(Object.fromEntries(Object.entries(plans).filter(([,p])=>p&&p._core).map(([g,p])=>[g,{...p._core,id:g,expenses:p._movs?Object.values(p._movs).sort((a,b)=>(a.created||0)-(b.created||0)):[],_me:p._acc||null}])));
+  /* Copia local de mis grupos (id + link vigente) para poder recuperarlos si la lista se pierde. */
+  const KN='pachote_known';const known=()=>{try{return JSON.parse(localStorage.getItem(KN))||{}}catch(e){return {}}};
+  const setKnown=(g,v)=>{try{const k=known();if(v)k[g]={...(k[g]||{}),...v};else delete k[g];localStorage.setItem(KN,JSON.stringify(k))}catch(e){}};
   function watchGroup(g){
-    if(subs[g])return;plans[g]={};const drop=()=>{unwatch(g);F.updateDoc(uref(uid()),{['groups.'+g]:F.deleteField()}).catch(()=>{});emit()};
+    if(subs[g])return;plans[g]={};
+    /* Solo se quita un grupo de mi lista si el servidor confirma que ya no existe o que ya no tengo acceso.
+       Un error pasajero o una lectura de la caché local nunca borra nada: se reintenta. */
+    const drop=()=>{unwatch(g);setKnown(g,null);F.updateDoc(uref(uid()),{['groups.'+g]:F.deleteField()}).catch(()=>{});emit()};
+    const retry=e=>{console.warn('grupo',g,e&&e.code);unwatch(g);emit();setTimeout(()=>{if(myGroups[g])watchGroup(g)},15000)};
     subs[g]=[
-      F.onSnapshot(gref(g),s=>{if(!s.exists()){drop();return}plans[g]._core=s.data();emit()},()=>drop()),
+      F.onSnapshot(gref(g),{includeMetadataChanges:false},s=>{if(!s.exists()){if(!s.metadata.fromCache)drop();return}const d=s.data();plans[g]._core=d;if(d.inviteToken)setKnown(g,{t:d.inviteToken,n:d.name});emit()},retry),
       F.onSnapshot(F.collection(db,'groups',g,'movs'),s=>{plans[g]._movs=Object.fromEntries(s.docs.map(d=>[d.id,{...d.data(),id:d.id}]));emit()},()=>{}),
-      F.onSnapshot(aref(g,uid()),s=>{if(!s.exists()){drop();return}plans[g]._acc=s.data();emit()},()=>drop())];
+      F.onSnapshot(aref(g,uid()),s=>{if(!s.exists()){if(!s.metadata.fromCache)drop();return}plans[g]._acc=s.data();emit()},retry)];
   }
   function unwatch(g){(subs[g]||[]).forEach(u=>u());delete subs[g];delete plans[g]}
-  return {
+  const api={
     kind:'cloud',
     user:()=>{const u=auth.currentUser;return u?{uid:u.uid,anon:u.isAnonymous,email:u.email||'',name:u.displayName||''}:null},
     watch(cb){onPlans=cb;return F.onSnapshot(uref(uid()),s=>{myGroups=(s.exists()&&s.data().groups)||{};
-      const pr=(s.exists()&&s.data().profile)||null;if(JSON.stringify(pr)!==JSON.stringify(myProfile)){myProfile=pr;onProf(pr)}Object.keys(myGroups).forEach(watchGroup);Object.keys(subs).forEach(g=>{if(!myGroups[g])unwatch(g)});emit()})},
+      const pr=(s.exists()&&s.data().profile)||null;if(JSON.stringify(pr)!==JSON.stringify(myProfile)){myProfile=pr;onProf(pr)}Object.keys(myGroups).forEach(watchGroup);Object.keys(subs).forEach(g=>{if(!myGroups[g])unwatch(g)});emit();
+      /* Recuperación: grupos que este dispositivo conocía y ya no están en la lista → volver a entrar con su link. */
+      if(!s.metadata.fromCache&&!rejoinTried){rejoinTried=true;const k=known();Object.keys(k).filter(g=>!myGroups[g]&&k[g].t).forEach(g=>{api.join(g,k[g].t).catch(e=>console.warn('no se pudo recuperar',g,e&&e.code))})}})},
     async create(p){
       const g=p.id,core=coreOf(p);core.owner=uid();core.inviteToken=rid(24);core.created=core.created||Date.now();
       await F.setDoc(gref(g),core);
@@ -67,10 +76,10 @@ async function firebaseStore(){
       const ms=await F.getDocs(F.collection(db,'groups',g,'movs'));const as=await F.getDocs(F.collection(db,'groups',g,'access'));const ls=await F.getDocs(F.collection(db,'groups',g,'log')).catch(()=>({docs:[]}));
       const refs=[...ms.docs.map(d=>d.ref),...ls.docs.map(d=>d.ref),...as.docs.filter(d=>d.id!==uid()).map(d=>d.ref)];
       for(let i=0;i<refs.length;i+=400){const b=F.writeBatch(db);refs.slice(i,i+400).forEach(r=>b.delete(r));await b.commit()}
-      await F.deleteDoc(gref(g));await F.deleteDoc(aref(g,uid())).catch(()=>{});
+      setKnown(g,null);await F.deleteDoc(gref(g));await F.deleteDoc(aref(g,uid())).catch(()=>{});
       await F.updateDoc(uref(uid()),{['groups.'+g]:F.deleteField()}).catch(()=>{});
     },
-    async leave(g){await F.deleteDoc(aref(g,uid()));await F.updateDoc(uref(uid()),{['groups.'+g]:F.deleteField()}).catch(()=>{})},
+    async leave(g){setKnown(g,null);await F.deleteDoc(aref(g,uid()));await F.updateDoc(uref(uid()),{['groups.'+g]:F.deleteField()}).catch(()=>{})},
     async join(g,token){
       const ex=await F.getDoc(aref(g,uid())).catch(()=>null);
       if(!ex||!ex.exists())await F.setDoc(aref(g,uid()),{role:'editor',token,memberId:null,joined:Date.now(),label:navigator.userAgent.slice(0,80)});
@@ -101,6 +110,7 @@ async function firebaseStore(){
     },
     signOut:()=>A.signOut(auth)
   };
+  return api;
 }
 
 /* ---------- Simulado (pruebas sin Firebase): «servidor» en localStorage, un usuario por pestaña ---------- */
