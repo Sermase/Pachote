@@ -1,0 +1,21 @@
+# Mantenimiento puntual: se ejecuta cuando cambia .github/ops/ (ver ops.js y task.json).
+name: Mantenimiento
+on:
+  push:
+    branches: [main]
+    paths: ['.github/ops/**']
+jobs:
+  ops:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 20}
+      - name: Ejecutar
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          echo "$SA" > "$RUNNER_TEMP/sa.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
+          cd .github/ops && npm init -y >/dev/null && npm i --silent firebase-admin@12 google-auth-library@9 >/dev/null 2>&1
+          node ops.js
