@@ -9,7 +9,8 @@ service cloud.firestore {
     function isMember(gid) { return signedIn() && exists(accPath(gid)); }
     function role(gid) { return get(accPath(gid)).data.role; }
     function canEdit(gid) { return isMember(gid) && role(gid) in ['admin', 'editor']; }
-    function isAdmin(gid) { return isMember(gid) && role(gid) == 'admin'; }
+    // Administra quien tiene el rol de administrador o, si el grupo lo permite («todos administran»), cualquiera que pueda apuntar.
+    function isAdmin(gid) { return isMember(gid) && (role(gid) == 'admin' || (role(gid) == 'editor' && grp(gid).data.get('allAdmin', false) == true)); }
 
     // Mi lista de grupos: solo yo.
     match /users/{uid} {
@@ -23,7 +24,7 @@ service cloud.firestore {
                     && request.resource.data.inviteToken is string && request.resource.data.inviteToken.size() >= 16;
       // Los editores cambian gente, familias y opciones; el dueño y el link solo los toca un administrador.
       allow update: if canEdit(gid) && (isAdmin(gid) ||
-                    !request.resource.data.diff(resource.data).affectedKeys().hasAny(['owner', 'inviteToken']));
+                    !request.resource.data.diff(resource.data).affectedKeys().hasAny(['owner', 'inviteToken', 'allAdmin']));
       allow delete: if isAdmin(gid);
 
       // Un documento por movimiento.

@@ -556,6 +556,7 @@ function logDiff(a,b){
   if((a.desc||'')!==(b.desc||''))out.push({act:'group',txt:'cambió la descripción del grupo'});
   if(JSON.stringify(featOf(a))!==JSON.stringify(featOf(b))){const f=featOf(b);out.push({act:'group',txt:`cambió las opciones: familias ${f.families?'sí':'no'}, niños ${f.kids?'sí':'no'}`})}
   if(JSON.stringify(a.kidsBy||null)!==JSON.stringify(b.kidsBy||null))out.push({act:'group',txt:'cambió quién paga lo de los niños (general)'});
+  if(!!a.allAdmin!==!!b.allAdmin)out.push({act:'group',txt:b.allAdmin?'hizo que todos los que entran administren':'quitó que todos administren'});
   if(!!a.closed!==!!b.closed)out.push({act:'group',txt:b.closed?'cerró el grupo':'reabrió el grupo'});
   return out;
 }
@@ -579,7 +580,11 @@ async function boot(){
   if(!ST){S.mode='error';render();return}
   S.mode=ST.kind;
   const j=parseJoin();
-  if(j){try{await ST.join(j.g,j.t);S.current=j.g;S.justJoined=j.g;toast('Te has unido al grupo')}catch(e){console.error(e);toast('Ese link de invitación no es válido o ha caducado. Pide uno nuevo.')}
+  if(j){try{await ST.join(j.g,j.t);S.current=j.g;S.justJoined=j.g;toast('Te has unido al grupo')}catch(e){console.error(e);
+      const net=!navigator.onLine||/unavailable|network/i.test(String(e.code||e.message||''));
+      setTimeout(()=>sheet(net?`<h2>📶 Sin conexión</h2><p class="hint">No se ha podido comprobar el link. Revisa la conexión y vuelve a abrirlo.</p><button class="btn" data-close>Entendido</button>`
+        :`<h2>🔗 Este link ya no está activo</h2><p class="hint">Quien administra el grupo ha cambiado el link de invitación, así que el antiguo ya no sirve para entrar.</p><p class="hint">Pide el link nuevo en el grupo (por ejemplo, en vuestro WhatsApp) y ábrelo desde aquí.</p><button class="btn" data-close>Entendido</button>`,
+        s=>{s.querySelector('[data-close]').onclick=closeSheet},false),300)}
     history.replaceState(null,'',location.pathname+location.search);if(S.current)try{history.pushState({g:S.current},'','#g')}catch(x){}}
   if(ST.onProfile)ST.onProfile(()=>{if(!S.current||!document.querySelector('#sheetRoot .scrim'))render()});
   if(isIOS())setTimeout(maybeAskInstall,2500);
@@ -930,7 +935,7 @@ function maybeAskInstall(){
 addEventListener('pachote-installable',()=>{render();setTimeout(maybeAskInstall,1200)});
 addEventListener('appinstalled',()=>{S.installed=true;window.__bip=null;render()});
 /* Menú general: perfil, tema, información de Pachote y el resto de Istari Core. */
-const APP_VERSION='v17';
+const APP_VERSION='v18';
 function themeSeg(){return `<div class="seg" id="mtheme">${[['auto','Automático'],['light','☀️ Claro'],['dark','🌙 Oscuro']].map(([k,n])=>`<button data-k="${k}" aria-pressed="${(document.documentElement.dataset.theme||'auto')===k}">${n}</button>`).join('')}</div>`}
 function bindTheme(s){s.querySelectorAll('#mtheme button').forEach(b=>b.onclick=()=>{const k=b.dataset.k;if(k==='auto')delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=k;
   try{k==='auto'?localStorage.removeItem('pachote_theme'):localStorage.setItem('pachote_theme',k)}catch(x){}s.querySelectorAll('#mtheme button').forEach(x=>x.setAttribute('aria-pressed',x===b))})}
@@ -1368,6 +1373,7 @@ function openPlan(id){
     sheet(`<h2>Nuevo grupo</h2>
      <div class="field"><label for="pname">Nombre</label><input id="pname" maxlength="60" placeholder="Casa rural en Asturias" enterkeyhint="next"></div>
      <div class="field"><label for="ppeople">¿Quiénes vais?</label><input id="ppeople" placeholder="Ana, Luis, Marta…" value="${esc(myProf().name?myProf().name+', ':'')}" autocomplete="off" enterkeyhint="done"><span class="hint" style="margin-top:4px">Separados por comas. Puedes añadir más gente, familias y niños luego.</span></div>
+     <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;font-size:14px"><input type="checkbox" id="pallad" style="width:20px;height:20px;margin-top:1px;flex:none"><span>👑 Todos los que entren con el link podrán administrar<br><span class="hint">Cambiar el link, quitar a gente o borrar el grupo. Se puede cambiar luego en ⚙️.</span></span></label>
      <div class="err" hidden></div>
      <div class="actions"><button class="btn sec" data-close>Cancelar</button><button class="btn" id="psave">Crear grupo</button></div>
      <button class="ghost" id="pimpbtn" style="align-self:center">📥 Importar una copia (.json)</button><input type="file" id="pimport" accept=".json,application/json" hidden>`,s=>{
@@ -1382,12 +1388,12 @@ function openPlan(id){
         const names=[...new Set(s.querySelector('#ppeople').value.split(/[,;\n]+|\s+y\s+/).map(x=>x.trim().slice(0,40)).filter(Boolean))];
         const pr=myProf();const members=names.map(nm=>({id:uid()+Math.random().toString(36).slice(2,4),name:nm,hh:null,weight:1}));
         const meM=pr.name?members.find(m=>m.name.toLowerCase()===pr.name.toLowerCase()):null;if(meM&&pr.photo)meM.photo=pr.photo;
-        const np={id:uid(),name:n,members,households:[],expenses:[],created:Date.now(),features:{families:false,kids:false}};S.current=np.id;S.tab=members.length>1?'movs':'gente';S.pendingMe=meM?meM.id:null;
+        const np={id:uid(),name:n,members,households:[],expenses:[],created:Date.now(),features:{families:false,kids:false}};if(s.querySelector('#pallad').checked)np.allAdmin=true;S.current=np.id;S.tab=members.length>1?'movs':'gente';S.pendingMe=meM?meM.id:null;
         if(meM)try{sessionStorage.setItem('pachote_asked_'+np.id,'1')}catch(x){}
         savePlan(np);closeSheet();toast(members.length?`Grupo creado con ${members.length} ${members.length===1?'persona':'personas'}`:'Grupo creado. Añade a la gente.')};
     });return;
   }
-  const c=compute(p);const ops=p.expenses.length;const F=featOf(p);const isAdm=(p._me?.role||'admin')==='admin';const acct=(ST&&ST.user())||{anon:true};
+  const c=compute(p);const ops=p.expenses.length;const F=featOf(p);const myRole=p._me?.role||'admin';const isAdm=myRole==='admin'||(!!p.allAdmin&&myRole==='editor');const acct=(ST&&ST.user())||{anon:true};
   sheet(`<div style="display:flex;align-items:center;gap:10px"><span style="font-size:24px">⚙️</span><h2 style="flex:1">Configuración del grupo</h2></div>
    <div class="field"><label for="pname">Nombre</label><div class="qa" style="padding:0;box-shadow:none;background:none"><div class="line"><input type="text" id="pname" maxlength="60" value="${esc(p.name)}" ${p.closed?'disabled':''}></div></div></div>
    <div class="field"><label for="pdesc">Descripción</label><input id="pdesc" maxlength="80" placeholder="Agosto en la casa de los abuelos" value="${esc(p.desc||'')}" ${p.closed?'disabled':''}></div>
@@ -1400,6 +1406,7 @@ function openPlan(id){
      <div class="field"><label for="plink">Link para invitar al grupo</label><input id="plink" readonly value="${esc(inviteLink(p.id))}" onclick="this.select()"></div>
      <div style="display:flex;flex-wrap:wrap;gap:8px"><button class="btn sm" id="pcopy">Copiar link</button><a class="btn sm sec" style="text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent('Únete a «'+p.name+'» en Pachote para llevar las cuentas: '+inviteLink(p.id))}">Enviar por WhatsApp</a>${isAdm?'<button class="btn sm danger" id="pregen">Cambiar link</button>':''}</div>
      <p class="hint">Quien abra el link entra al grupo sin registrarse y puede apuntar gastos. ${isAdm?'Si el link se filtra, «Cambiar link» invalida el anterior; quien ya está dentro sigue dentro.':''}</p>
+     ${isAdm?`<label class="chk" style="display:flex;gap:10px;align-items:flex-start;cursor:pointer"><input type="checkbox" id="palladm" ${p.allAdmin?'checked':''} ${p.closed?'disabled':''} style="width:20px;height:20px;margin-top:2px;flex:none"><span><b>👑 Todos los que entren administran</b><br><span class="hint">Cualquiera con el link podrá también cambiar el link, quitar dispositivos y borrar el grupo. Útil entre gente de confianza; si no, mejor nombrar a mano a uno o dos administradores aquí abajo.</span></span></label>`:p.allAdmin?'<p class="hint">👑 En este grupo todos los que entran administran.</p>':''}
      <div class="section-label" style="margin:6px 0 0">Dispositivos con acceso</div><div class="list" id="acclist"><div class="row"><span class="hint">Cargando…</span></div></div>
      <button class="ghost" id="pwho" style="align-self:flex-start">🙋 Cambiar quién soy yo</button>`)}
    <button class="fsec rowbtn" data-act="menu" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:13px 14px;border:none;font:inherit;color:inherit"><span class="ico">👤</span><span class="st" style="flex:1;font-weight:700">Perfil, tema y más</span><span class="ss">${esc(myProf().name||(acct.anon?'Sin cuenta':acct.email))} ›</span></button>
@@ -1479,6 +1486,7 @@ function openPlan(id){
     $('#pcopy').onclick=()=>{const t=inviteLink(p.id);try{navigator.clipboard.writeText(t).then(()=>toast('Link copiado'),()=>{$('#plink').select();toast('Selecciona y copia el link')})}catch(x){$('#plink').select()}};
     const rg=$('#pregen');if(rg)rg.onclick=()=>{rg.disabled=true;ST.regenToken(p.id).then(()=>{toast('Link cambiado: el anterior ya no sirve');setTimeout(()=>{const l=$('#plink');if(l)l.value=inviteLink(p.id)},400)}).catch(()=>toast('No se pudo cambiar el link')).finally(()=>rg.disabled=false)};
     $('#pwho').onclick=()=>askWho(true);
+    const aa=$('#palladm');if(aa)aa.onchange=()=>{const np=clone(plan());if(aa.checked)np.allAdmin=true;else delete np.allAdmin;savePlan(np);toast(aa.checked?'Ahora todos los que entran administran':'Solo administran los que tú elijas')};
     const gg=$('#pgoogle');if(gg)gg.onclick=()=>ST.linkGoogle().then(r=>{toast(r==='linked'?'Listo: tus grupos quedan guardados en tu cuenta de Google':'Has entrado con tu cuenta de Google');closeSheet();render()}).catch(e=>toast(e.code==='auth/popup-closed-by-user'?'Cancelado':'No se pudo conectar con Google'));
     /* Historial: se carga al abrir la sección. */
     const lgd=s.querySelector('details[data-gsec="historial"]');const loadLog=()=>{if(!ST||!ST.watchLog)return;if(S.logUnsub){S.logUnsub();S.logUnsub=null}S.logUnsub=ST.watchLog(p.id,list=>{const box=s.querySelector('#loglist');if(!box)return;

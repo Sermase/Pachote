@@ -126,7 +126,7 @@ function mockStore(){
   let cb=()=>{},pcb=()=>{},lastProf='null';const fire=()=>{const d=load();const pr=JSON.stringify(d.users[me]?.profile||null);if(pr!==lastProf){lastProf=pr;pcb(JSON.parse(pr))}const gs=(d.users[me]&&d.users[me].groups)||{};const out={};
     for(const g in gs){const G=d.groups[g];if(!G||!G.access[me])continue;out[g]={...clean(G.core),id:g,expenses:Object.values(G.movs).sort((a,b)=>(a.created||0)-(b.created||0)),_me:G.access[me]}}cb(out);logCbs.forEach(([g,f])=>f());accCbs.forEach(([g,f])=>{const G=load().groups[g];f(G?Object.entries(G.access).map(([u,a])=>({uid:u,...a})):[])})};
   const accCbs=[],logCbs=[];window.addEventListener('storage',e=>{if(e.key===K)fire()});
-  const can=(G,role)=>G&&G.access[me]&&(role==='admin'?G.access[me].role==='admin':['admin','editor'].includes(G.access[me].role));
+  const can=(G,role)=>G&&G.access[me]&&(role==='admin'?(G.access[me].role==='admin'||(!!G.core.allAdmin&&G.access[me].role==='editor')):['admin','editor'].includes(G.access[me].role));
   return {
     kind:'mock',user:()=>({uid:me,anon:true,email:'',name:''}),
     watch(f){cb=f;setTimeout(fire,0);return()=>{}},
