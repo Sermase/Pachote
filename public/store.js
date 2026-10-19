@@ -25,6 +25,8 @@ async function firebaseStore(){
   const auth=A.getAuth(app);
   let db;try{db=F.initializeFirestore(app,{localCache:F.persistentLocalCache({tabManager:F.persistentMultipleTabManager()})})}catch(e){db=F.getFirestore(app)}
   await A.setPersistence(auth,A.browserLocalPersistence).catch(()=>{});
+  /* Vuelta de un inicio de sesión por redirección (si el navegador no dejó abrir la ventanita de Google). */
+  try{await A.getRedirectResult(auth)}catch(e){if(e.code==='auth/credential-already-in-use'){const cred=A.GoogleAuthProvider.credentialFromError(e);if(cred)await A.signInWithCredential(auth,cred).catch(()=>{})}else console.warn(e)}
   const user=await new Promise(res=>{const un=A.onAuthStateChanged(auth,async u=>{if(u){un();res(u)}else{try{await A.signInAnonymously(auth)}catch(e){un();res(null)}}})});
   if(!user)throw new Error('auth');
   const uid=()=>auth.currentUser.uid;
@@ -98,17 +100,20 @@ async function firebaseStore(){
     setProfile:pr=>F.setDoc(uref(uid()),{profile:clean(pr)},{merge:true}),
     async linkGoogle(){
       const prov=new A.GoogleAuthProvider();
+      prov.setCustomParameters({prompt:'select_account'});
       try{await A.linkWithPopup(auth.currentUser,prov);return 'linked'}
       catch(e){
+        if(['auth/popup-blocked','auth/operation-not-supported-in-this-environment','auth/web-storage-unsupported'].includes(e.code)){await A.linkWithRedirect(auth.currentUser,prov);return 'redirect'}
         if(e.code!=='auth/credential-already-in-use')throw e;
         /* Ya tenías cuenta: entramos con ella y volvemos a unirnos a los grupos de este dispositivo con su link actual. */
-        const tokens=Object.keys(myGroups).map(g=>[g,plans[g]?._core?.inviteToken]).filter(x=>x[1]);
+        const kn=known();const tokens=[...new Map([...Object.keys(myGroups).map(g=>[g,plans[g]?._core?.inviteToken]),...Object.keys(kn).map(g=>[g,kn[g].t])].filter(x=>x[1])).entries()];
         const cred=A.GoogleAuthProvider.credentialFromError(e);await A.signInWithCredential(auth,cred);
         for(const [g,t] of tokens){try{await this.join(g,t)}catch(x){}}
         return 'switched';
       }
     },
-    signOut:()=>A.signOut(auth)
+    /* Cerrar sesión: los grupos se quedan en la cuenta; este dispositivo vuelve a empezar sin cuenta. */
+    async signOut(){try{localStorage.removeItem(KN)}catch(e){}await A.signOut(auth)}
   };
   return api;
 }
