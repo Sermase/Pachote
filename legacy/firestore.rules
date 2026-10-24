@@ -1,4 +1,7 @@
 rules_version = '2';
+// Reglas del Firebase ANTIGUO de Pachote (pachote-78042). Ya no se despliegan:
+// se quedan como estaban para que cada dispositivo pueda mudar sus grupos.
+// Las reglas de Pachote viven ahora en el repo de Listopic (firestore.rules, sección PACHOTE).
 // Pachote · reglas de seguridad.
 // Solo quien entró con el link de invitación vigente (o creó el grupo) puede ver y tocar ese grupo.
 service cloud.firestore {

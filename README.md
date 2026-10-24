@@ -1,36 +1,27 @@
-# Pachote · puesta en marcha con Firebase
+# Pachote · cuentas claras, a pachas
 
-## 1. Una sola vez, en la consola de Firebase (proyecto «pachote»)
-1. **Authentication → Método de acceso**: activa **Anónimo** y **Google**.
-2. **Firestore Database → Crear base de datos** → modo producción → región `europe-southwest1` (Madrid) o `eur3`.
-3. **Configuración del proyecto → General → Tus apps → Añadir app web** (</>). Copia el bloque `firebaseConfig`.
-4. **Authentication → Configuración → Dominios autorizados**: comprueba que están `pachote.web.app` y `pachote.firebaseapp.com` (o el ID real de tu proyecto).
+App en **https://pachote-78042.web.app**. Los datos viven en el **Firebase de Listopic**: la misma cuenta sirve en las dos apps y un grupo de Pachote puede enlazarse al chat de un grupo de Listopic.
 
-## 2. Despliegue
-Cada `git push` a `main` publica la app y las reglas automáticamente (`.github/workflows/firebase-deploy.yml`).
-La app queda en **https://pachote-78042.web.app**.
+## Despliegue
+Cada `git push` a `main` publica la app (`.github/workflows/firebase-deploy.yml`, solo Hosting).
+Las reglas de Firestore de Pachote están en el repo de Listopic (`firestore.rules`, sección PACHOTE) y se despliegan desde allí, igual que las funciones `pachoteMigrate` y `pachoteAdopt`.
 
-## 2b. Despliegue manual (opcional)
-1. Pega tu `firebaseConfig` en `public/firebase-config.js`.
-2. Pon el ID de tu proyecto en `.firebaserc` (donde dice `PEGA_AQUI_TU_PROJECT_ID`).
-3. En esta carpeta:
-   ```
-   npm install -g firebase-tools     # si no lo tienes
-   firebase login
-   firebase deploy --only firestore:rules,hosting
-   ```
-4. Abre la dirección que te dé (`https://TU-PROYECTO.web.app`).
+## Una sola vez, en la consola (proyecto «listopic»)
+1. **Authentication → Método de acceso**: **Anónimo** activado (Google y email ya lo están).
+2. **Authentication → Configuración → Dominios autorizados**: `pachote-78042.web.app`.
+3. **Google Cloud → Credenciales → Browser key**: añadir `https://pachote-78042.web.app/*` a los sitios web permitidos.
 
-## 3. Traer tus planes actuales
-En Pachote: **+ Nuevo plan → 📥 Importar** y elige cada archivo de `mis-planes/`.
+## Mudanza desde el Firebase antiguo («pachote-78042»)
+Al abrir esta versión, cada dispositivo manda a `pachoteMigrate` el token de su usuario antiguo. La función lo comprueba, lee sus grupos del proyecto antiguo con ese mismo token y los copia al nuevo, con el mismo papel (administrador, puede apuntar o solo ver). Los links de invitación siguen valiendo. Las reglas antiguas quedan en `legacy/firestore.rules`.
 
 ## Probar sin Firebase
 Sirve la carpeta `public` (por ejemplo `npx serve public`) y abre `http://localhost:3000/?mock`. Usa un almacén simulado en el navegador; cada pestaña es un «dispositivo».
 
 ## Cómo funciona el acceso
-- Al abrir la app se crea un usuario anónimo en ese navegador, sin registro.
+- Al abrir la app se crea un usuario anónimo en ese navegador, sin registro. En Listopic ese usuario no cuenta como sesión.
 - **⚙️ → Compartir y dispositivos**: link de invitación para mandar al WhatsApp del grupo. Quien lo abre entra y puede apuntar gastos.
 - Si el link se filtra: **Cambiar link**. El viejo deja de valer; quien ya estaba dentro sigue dentro.
 - El administrador puede poner a alguien en **Solo ver** o quitarle el acceso.
-- **Tu cuenta → Guardar mis grupos con Google**: para tenerlos en varios dispositivos.
-- Las reglas de `firestore.rules` impiden ver o tocar un grupo sin haber entrado con su link.
+- **☰ → Entrar con tu cuenta de Listopic** (Google o email): tus grupos te siguen a cualquier dispositivo.
+- **⚙️ → Chat de Listopic**: enlaza el grupo con un chat de grupo de Listopic. Los del chat ven el resumen (total, saldos, pagos y últimos gastos) y entran sin link; aquí se ve el chat con 💬.
+- Desde Listopic (info del grupo o 🍽️ → 💸 Cuentas) también se crean cuentas nuevas con la gente del chat.
