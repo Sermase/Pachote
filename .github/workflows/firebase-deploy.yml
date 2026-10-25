@@ -20,4 +20,8 @@ jobs:
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           projectId: pachote-78042
           channelId: live
+          # firebase-tools 15.3x comprueba la API con serviceusage.services.get, permiso que la
+          # cuenta de servicio no tiene (403). Con la 13 desplegaba bien; se puede volver a «latest»
+          # si se le da el rol «Consumidor de Service Usage» en el proyecto pachote-78042.
+          firebaseToolsVersion: '13'
 
