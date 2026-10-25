@@ -381,6 +381,14 @@ body.dragging .sub.kids.ek{padding:10px 8px;background:var(--accent-soft)}
 .err{color:var(--neg);font-size:13px;font-weight:600}
 .actions{display:flex;gap:10px}
 .actions .btn{flex:1}
+/* Aceptar y Cancelar siempre a la vista, aunque la hoja sea larga. */
+.actions.stick{position:sticky;bottom:calc(-18px - env(safe-area-inset-bottom,0px));z-index:3;background:var(--bg);margin:0 -16px;padding:10px 16px calc(12px + env(safe-area-inset-bottom,0px));box-shadow:0 -10px 16px -12px rgba(0,0,0,.35)}
+.keys{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px}
+.keys[hidden]{display:none}
+.keys button{height:46px;display:flex;align-items:center;justify-content:center;line-height:1;border:none;border-radius:12px;background:var(--surface);box-shadow:inset 0 0 0 1px var(--line);color:var(--ink);font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
+.keys button.op{background:var(--sunk)}
+.keys button.eq{grid-column:span 3;background:var(--accent);color:var(--accent-ink);font-size:15px}
+.keys button:active{transform:scale(.96)}
 .confirm{background:var(--neg-soft);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px;color:var(--neg);font-weight:600;font-size:14px}
 .scrim~.toast,body:has(#sheetRoot .scrim) .toast{bottom:auto;top:calc(14px + env(safe-area-inset-top,0px))}
 .toast{pointer-events:none;position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:999px;font-weight:600;font-size:14px;z-index:60;max-width:calc(100% - 32px);text-align:center}
@@ -1029,7 +1037,7 @@ function maybeAskInstall(){
 addEventListener('pachote-installable',()=>{render();setTimeout(maybeAskInstall,1200)});
 addEventListener('appinstalled',()=>{S.installed=true;window.__bip=null;render()});
 /* Menú general: perfil, tema, información de Pachote y el resto de Istari Core. */
-const APP_VERSION='v19';
+const APP_VERSION='v20';
 function themeSeg(){return `<div class="seg" id="mtheme">${[['auto','Automático'],['light','☀️ Claro'],['dark','🌙 Oscuro']].map(([k,n])=>`<button data-k="${k}" aria-pressed="${(document.documentElement.dataset.theme||'auto')===k}">${n}</button>`).join('')}</div>`}
 function bindTheme(s){s.querySelectorAll('#mtheme button').forEach(b=>b.onclick=()=>{const k=b.dataset.k;if(k==='auto')delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=k;
   try{k==='auto'?localStorage.removeItem('pachote_theme'):localStorage.setItem('pachote_theme',k)}catch(x){}s.querySelectorAll('#mtheme button').forEach(x=>x.setAttribute('aria-pressed',x===b))})}
@@ -1436,7 +1444,7 @@ function closeSheet(fromPop){const hk=S.onSheetClose;S.onSheetClose=null;if(hk)t
   if(had&&fromPop!==true&&history.state&&history.state.sheet){S.skipPop=(S.skipPop||0)+1;try{history.back()}catch(x){}}}
 function swipeClose(sh){
   if(!sh)return;let y0=null,dy=0,on=false,t0=0,lastY=0,lastT=0,vel=0;
-  const scrim=sh.parentElement;const skip=t=>t.closest('input,select,textarea,.rcal,.modes,.cols,.pchips');
+  const scrim=sh.parentElement;const skip=t=>t.closest('input,select,textarea,.rcal,.modes,.cols,.pchips,.keys');
   /* La animación de entrada solo una vez: si se reactivara al soltar, la hoja «saltaría» arriba antes de bajar. */
   sh.addEventListener('animationend',()=>sh.classList.add('shown'),{once:true});setTimeout(()=>sh.classList.add('shown'),400);
   const setDim=f=>{scrim.style.backgroundColor=`rgba(10,14,12,${(.45*f).toFixed(3)})`};
@@ -1850,14 +1858,16 @@ function openEntry(id,pre){
   const st={kind:e?kindOf(e):(pre?.kind||'gasto'),cat:e?.cat||'otros',mode:e?.mode||'peso',parts:new Set(e?(e.parts||[]):p.members.filter(isOn).map(m=>m.id)),
     vals:{...(e?.vals||{})},custom:{...(e?.custom||{})},touched:!!e,more:!!(e&&!BASIC_MODES.includes(e.mode||'peso')),catManual:!!e};
   const actIds=p.members.filter(isOn).map(m=>m.id);
-  st.open=!!(e&&kindOf(e)!=='transfer'&&((e.mode||'peso')!=='peso'||(e.parts||[]).length!==actIds.length||!(e.parts||[]).every(id=>actIds.includes(id))));
+  /* El reparto por persona se ve siempre abierto (se puede plegar con «Listo»). */
+  st.open=true;
   const vis=m=>isOn(m)||st.parts.has(m.id);
   const M=Object.fromEntries(p.members.map(m=>[m.id,m]));
   const groups=FEAT.families?[...p.households.map(h=>({h,ms:p.members.filter(m=>m.hh===h.id&&vis(m))})),{h:null,ms:p.members.filter(m=>!p.households.some(h=>h.id===m.hh)&&vis(m))}].filter(g=>g.ms.length):[{h:null,flat:true,ms:p.members.filter(vis)}];
   const jo=allJoints(p);
   const whoOpts=`<optgroup label="Personas">${p.members.map(m=>`<option value="m:${m.id}">${esc(m.name)}${isOn(m)?'':' (inactivo)'}</option>`).join('')}</optgroup>${jo.length?`<optgroup label="Cuentas conjuntas">${jo.map(j=>`<option value="j:${j.id}">${esc(jointName(p,j))} (conjunta)</option>`).join('')}</optgroup>`:''}`;
   sheet(`${pre?.settle?'<h2>💸 Pagar</h2><p class="hint" style="margin-top:-8px">Revisa el pago antes de apuntarlo: puedes cambiar el importe, la fecha o quién paga a quién.</p>':''}<div class="seg" id="ekind" ${pre?.settle?'hidden':''}><button data-k="gasto">Gasto</button><button data-k="ingreso">Ingreso</button><button data-k="transfer">Transferencia</button></div>
-   <div class="field"><label for="eamt">Importe (€)</label><div style="position:relative"><input id="eamt" style="padding-right:58px!important" class="amount-in num" inputmode="decimal" placeholder="0,00" value="${e?centsToInput(e.amount):pre?.amount?centsToInput(pre.amount):''}"><button type="button" id="eplus" class="ghost" aria-label="Sumar otro importe" title="Sumar otro importe" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);width:42px;height:42px;padding:0;font-size:22px;border-radius:12px">+</button></div><span class="hint" id="ecalc" hidden style="margin-top:4px;font-weight:700"></span></div>
+   <div class="field"><label for="eamt">Importe (€)</label><div style="position:relative"><input id="eamt" style="padding-right:58px!important" class="amount-in num" inputmode="decimal" placeholder="0,00" value="${e?centsToInput(e.amount):pre?.amount?centsToInput(pre.amount):''}"><button type="button" id="ecalcbtn" class="ghost" aria-label="Calculadora" aria-expanded="false" title="Calculadora" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);width:42px;height:42px;padding:0;font-size:20px;border-radius:12px">🧮</button></div><span class="hint" id="ecalc" hidden style="margin-top:4px;font-weight:700"></span>
+     <div class="keys" id="ekeys" hidden>${['7','8','9','÷','4','5','6','×','1','2','3','−',',','0','⌫','+','C','='].map(k=>`<button type="button" data-key="${k}" class="${'÷×−+C⌫'.includes(k)?'op':k==='='?'eq':''}" aria-label="${({'÷':'Entre','×':'Por','−':'Menos','+':'Más','⌫':'Borrar','C':'Borrar todo','=':'Usar el resultado'})[k]||k}">${k==='='?'= Usar resultado':k}</button>`).join('')}</div></div>
    <div class="field"><label for="edesc">Concepto</label><input id="edesc" maxlength="80" placeholder="" value="${esc(e?.desc||pre?.desc||'')}"></div>
    <div class="field" id="ecatwrap"><button class="catbtn" id="ecatbtn" aria-expanded="false" aria-label="Tipo de gasto"></button>
      <div id="ecats" hidden>${(()=>{const u=catUsage();const by=(a,b)=>(u[b.k]||0)-(u[a.k]||0);const btn=c=>`<button data-k="${c.k}"><span>${c.l}</span>${c.n}</button>`;
@@ -1877,7 +1887,7 @@ function openEntry(id,pre){
      <div class="status" id="estatus"></div>
      </div>
    </div>
-   <details class="adv" id="eadv" ${e&&hasPeriod(e)?'open':''}><summary>Más opciones</summary>
+   <details class="adv" id="eadv" open><summary>Más opciones</summary>
      <span class="flabel">Periodo del gasto</span>
      <input type="hidden" id="estart" value="${e?.dateStart||(e&&hasPeriod(e)?e.date:'')}"><input type="hidden" id="eend" value="${e?.dateEnd||''}">
      <div class="rsum" style="margin:6px 0"><span id="rtxt"></span><button type="button" class="ghost" id="rclr">Quitar</button></div>
@@ -1886,7 +1896,7 @@ function openEntry(id,pre){
      ${e?.created>1e12?`<p class="hint">Apuntado el ${esc(new Date(e.created).toLocaleString('es-ES',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}))}.</p>`:''}
    </details>
    <div class="err" hidden></div>
-   <div class="actions"><button class="btn sec" data-close>Cancelar</button><button class="btn" id="esave">Guardar</button></div>
+   <div class="actions stick"><button class="btn sec" data-close>Cancelar</button><button class="btn" id="esave">Guardar</button></div>
    ${!e&&!pre?.settle?'<button class="ghost" id="eagain" style="align-self:center;margin-top:-4px">Guardar y apuntar otro</button>':''}
    ${e?`<div id="edel"><button class="btn danger" style="width:100%">Borrar movimiento</button></div>`:''}`,s=>{
     const $=q=>s.querySelector(q);let done=false;$('[data-close]').onclick=()=>{done=true;if(!e)S.entryDraft=null;closeSheet()};
@@ -1935,7 +1945,18 @@ function openEntry(id,pre){
     $('#emore').onclick=()=>{st.more=!st.more;draw()};
     s.querySelectorAll('#emodes button[data-m]').forEach(b=>b.onclick=()=>{const was=st.mode;st.mode=b.dataset.m;if(was!==st.mode){st.touched=false;refill()}draw()});
     amt.oninput=()=>{calcHint();if(st.mode==='importe'&&!st.touched)refill();updateVals()};
-    const pl=$('#eplus');pl.onpointerdown=ev=>ev.preventDefault();pl.onclick=()=>{if(amt.value.trim()&&!/[+\-*\/]$/.test(amt.value.trim()))amt.value=amt.value.trim()+'+';amt.focus();calcHint()};
+    /* Calculadora: escribe la cuenta en el importe sin abrir el teclado del móvil; «= Usar resultado» deja solo el resultado. */
+    const kb=$('#ecalcbtn'),keys=$('#ekeys'),OPS={'÷':'/','×':'×','−':'-','+':'+'};
+    const setKeys=on=>{keys.hidden=!on;kb.setAttribute('aria-expanded',on);amt.setAttribute('inputmode',on?'none':'decimal');if(on)amt.blur()};
+    kb.onpointerdown=ev=>ev.preventDefault();kb.onclick=()=>setKeys(keys.hidden);
+    keys.onpointerdown=ev=>ev.preventDefault();
+    keys.onclick=ev=>{const b=ev.target.closest('[data-key]');if(!b)return;const k=b.dataset.key;let t=amt.value.replace(/\s|€/g,'');
+      if(k==='C')t='';else if(k==='⌫')t=t.slice(0,-1);
+      else if(k==='='){const v=calcEur(t);if(!(v>0)){const h=$('#ecalc');h.hidden=false;h.textContent='Revisa la cuenta';return}t=centsToInput(v);setKeys(false)}
+      else if(OPS[k]){if(!t)return;t=t.replace(/[-+×*\/]$/,'')+OPS[k]}
+      else if(k===','){const seg=t.split(/[-+×*\/]/).pop();if(seg.includes(','))return;t+=(seg?'':'0')+','}
+      else t+=k;
+      amt.value=t;amt.oninput()};
     amt.onblur=()=>{const v=calcEur(amt.value);if(/[+*×x\/]|\d\s*-/.test(amt.value)&&!isNaN(v)&&v>0){amt.value=centsToInput(v);calcHint()}};
     const sel=()=>[...st.parts].filter(id=>M[id]);
     function refill(){
