@@ -844,11 +844,17 @@ function gcard(p){const prev=FEAT;FEAT=featOf(p);const st=myStanding(p);const v=
   return `<button class="grow" data-act="open" data-v="${p.id}" style="--gc:${groupColor(p)}"><span class="gav">${esc(groupEmoji(p))}</span>
     <span class="gmain"><span class="gname">${esc(p.name)}</span><span class="gmeta">${esc(p.desc?p.desc+' · '+groupMeta(p):groupMeta(p))}</span></span>
     ${v==null||!v?'':`<span class="gme ${v>0?'pos':'neg'}">${esc(st.lab)}<b class="num">${money(Math.abs(v))}</b></span>`}<span class="chev" aria-hidden="true">›</span></button>`}
+/* Tras cerrar sesión: volver a entrar con un toque (los grupos están en la cuenta, no en el móvil). */
+function signedOutCard(){const u=ST&&ST.user&&ST.user();const last=ST&&ST.lastAccount&&ST.lastAccount();
+  if(!u||!u.anon||!last||!last.out||!last.email)return '';
+  return `<div class="card" style="padding:12px 14px;display:flex;flex-direction:column;gap:8px;margin-bottom:12px"><b>👋 Has cerrado sesión</b><p class="hint" style="margin:0">Tus grupos están en tu cuenta <b>${esc(last.email)}</b>. Entra otra vez para verlos aquí.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm" data-act="relogin">Volver a entrar</button><button class="ghost" data-act="forgetlast">Seguir sin cuenta</button></div></div>`}
 function homeHTML(badge){
-  const ps=Object.values(S.plans).sort((a,b)=>(b.updated||0)-(a.updated||0));const open=ps.filter(p=>!p.closed),closed=ps.filter(p=>p.closed);
+  const ps=Object.values(S.plans).sort((a,b)=>(b.updated||0)-(a.updated||0));const open=ps.filter(p=>!p.closed),closed=ps.filter(p=>p.closed);const out=signedOutCard();
   return `<header><div class="topbar"><div class="brand"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="2.5" width="19" height="19" rx="5" fill="var(--accent)"/><path d="M7 17L17 7" stroke="var(--accent-ink)" stroke-width="2.4" stroke-linecap="round"/><circle cx="8.6" cy="8.6" r="1.7" fill="var(--accent-ink)"/><circle cx="15.4" cy="15.4" r="1.7" fill="var(--accent-ink)"/></svg><span class="bname">Pachote<small>Cuentas claras, a pachas</small></span></div><div class="spacer"></div>${badge}${meButton()}</div></header>
+  ${out}
   <div class="home-t"><h1>Mis grupos</h1>${ps.length?'<button class="btn sm" data-act="newplan">+ Nuevo grupo</button>':''}</div>
-  ${ps.length?`<div class="glist list">${open.map(gcard).join('')||'<div class="row"><span class="hint">No tienes grupos abiertos.</span></div>'}</div>
+  ${out&&!ps.length?'':ps.length?`<div class="glist list">${open.map(gcard).join('')||'<div class="row"><span class="hint">No tienes grupos abiertos.</span></div>'}</div>
   ${closed.length?`<details class="fsec"><summary><span class="ico">🔒</span><span class="st">Cerrados</span><span class="ss">${closed.length}</span></summary><div class="fbody"><div class="glist list">${closed.map(gcard).join('')}</div></div></details>`:''}`
   :`<div class="empty"><h2>Aún no tienes grupos</h2><p>Un grupo es un viaje, una casa compartida o una cena: tiene su gente, sus familias y sus gastos.</p><button class="btn" data-act="newplan">Crear grupo</button></div>`}
   ${installBtn()}
@@ -898,16 +904,16 @@ function askWho(force,then){
     <div class="whog">${ordered.map(m=>`<button data-who="${m.id}" aria-pressed="${p._me?.memberId===m.id}" class="${m===sug&&!p._me?.memberId?'sug':''}">${avHTML(m,memberColor(p,m))}<span>${esc(m.name)}</span></button>`).join('')}</div>
     <button class="ghost" id="wnot" style="align-self:center">No estoy en la lista</button>
     <div id="wnotf" hidden style="display:flex;gap:8px"><input id="wnn" maxlength="40" placeholder="Tu nombre" value="${esc(pr.name||'')}" style="flex:1;border:1px solid var(--line);border-radius:11px;padding:10px 12px;background:var(--surface);height:46px"><button class="btn sm" id="wnok">Seguir</button></div>
-    ${anon&&ST.kind==='cloud'?`<div class="card" style="padding:10px 12px;gap:6px"><span class="hint" style="margin:0">💾 No hace falta cuenta. Pero si quieres no perder tus grupos al cambiar de móvil, entra con tu cuenta de Listopic.</span><button class="btn sm sec" id="wgoogle" style="align-self:flex-start">Entrar con Listopic</button></div>`:anon?'<p class="hint" style="margin:0">💾 No hace falta cuenta. Si quieres conservar tus grupos al cambiar de móvil, entra con tu cuenta de Listopic desde ☰.</p>':''}
+    ${anon&&ST.kind==='cloud'?`<div class="card" style="padding:10px 12px;gap:6px"><span class="hint" style="margin:0">💾 No hace falta cuenta. Pero si ya tienes una (vale la de Listopic) o quieres no perder tus grupos al cambiar de móvil, entra antes de elegir.</span><button class="btn sm sec" id="wgoogle" style="align-self:flex-start">Entrar o crear cuenta</button></div>`:''}
     <button class="btn sec" data-close>${then?'Cancelar':'Ahora no'}</button>`,s=>{s.querySelector('[data-close]').onclick=closeSheet;
     s.querySelector('#wnot').onclick=()=>{s.querySelector('#wnotf').hidden=false;s.querySelector('#wnn').focus()};
     s.querySelector('#wnok').onclick=()=>{const n=s.querySelector('#wnn').value.trim();if(!n)return s.querySelector('#wnn').focus();(ST.setProfile?ST.setProfile({...myProf(),name:n}):Promise.resolve()).then(()=>{closeSheet();toast('¡Hola, '+n+'!');if(then)setTimeout(then,60)}).catch(()=>toast('No se pudo guardar'))};
-    const wg=s.querySelector('#wgoogle');if(wg)wg.onclick=()=>openLogin();
+    const wg=s.querySelector('#wgoogle');if(wg)wg.onclick=()=>openLogin(()=>{if(S.current===p.id&&!plan()?._me?.memberId)askWho(true)});
     s.querySelectorAll('[data-who]').forEach(b=>b.onclick=()=>{const m=p.members.find(x=>x.id===b.dataset.who);ST.setMe(p.id,m.id).then(()=>{const cur=S.plans[p.id];if(cur)cur._me={...(cur._me||{}),memberId:m.id};closeSheet();toast('¡Hola, '+m.name+'!');if(then)setTimeout(then,60);
       const pr=myProf();if(!pr.name&&ST.setProfile)ST.setProfile({name:m.name}).catch(()=>{});
       if(pr.photo&&!m.photo&&p._me?.role!=='viewer'){const np=clone(plan());const x=np.members.find(y=>y.id===m.id);if(x){x.photo=pr.photo;savePlan(np)}}}).catch(()=>toast('No se pudo guardar'))})},false);
 }
-/* Perfil: nombre y foto de quien usa este dispositivo (o su cuenta de Listopic). La foto se copia a la persona que eres en cada grupo. */
+/* Perfil: nombre y foto de quien usa este dispositivo (o su cuenta). La foto se copia a la persona que eres en cada grupo. */
 function myProf(){return (ST&&ST.profile&&ST.profile())||{}}
 function meButton(){const pr=myProf();const u=(ST&&ST.user&&ST.user())||{anon:true};const known=pr.photo||pr.name||!u.anon;
   if(!known)return `<button class="meav menu" data-act="menu" aria-label="Menú" title="Menú"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>`;
@@ -930,8 +936,8 @@ function openProfile(){
     <p class="hint" style="margin-top:-6px">Tu foto aparece en los grupos donde has dicho quién eres${mine.length?`: ${mine.map(p=>`<b>${esc(p.members.find(m=>m.id===p._me.memberId).name)}</b> en «${esc(p.name)}»`).join(', ')}`:''}.</p>
     <div class="actions"><button class="btn sec" data-close>Cancelar</button><button class="btn" id="pfsave">Guardar</button></div>
     <div class="card" style="padding:12px 14px;display:flex;flex-direction:column;gap:8px"><b>🔐 Tu cuenta</b>
-      ${u.anon?`<p class="hint" style="margin:0">Tus grupos están guardados en este dispositivo, sin registrarte. Si cambias de móvil, vuelve a entrar con el link de cada grupo.</p>${ST&&ST.kind==='cloud'?'<button class="btn sm" id="pfgoogle" style="align-self:flex-start">Entrar con tu cuenta de Listopic</button>':''}`
-        :`<p class="hint" style="margin:0">Conectado con tu cuenta de Listopic (<b>${esc(u.email)}</b>). Tus grupos y tu perfil te siguen a cualquier dispositivo.</p>`}</div>`,s=>{
+      ${u.anon?`<p class="hint" style="margin:0">Tus grupos están guardados en este dispositivo, sin registrarte. Si cambias de móvil, vuelve a entrar con el link de cada grupo.</p>${ST&&ST.kind==='cloud'?'<button class="btn sm" id="pfgoogle" style="align-self:flex-start">Entrar o crear cuenta</button>':''}`
+        :`<p class="hint" style="margin:0">Has entrado como <b>${esc(u.email)}</b>. Tus grupos y tu perfil te siguen a cualquier dispositivo. Si usas Listopic, es la misma cuenta.</p>`}</div>`,s=>{
     const $=q=>s.querySelector(q);$('[data-close]').onclick=closeSheet;
     const paint=()=>{const b=$('#pfph');b.style.background=photo?`url('${photo}') center/cover`:'var(--accent)';b.innerHTML=(photo?'':esc(initials($('#pfname').value||'?')))+'<span class="cam">📷</span>';$('#pfrm').hidden=!photo;$('#pfch').textContent=photo?'Cambiar foto':'Poner foto'};
     const pick=()=>pickPhoto(d=>{photo=d;paint()});$('#pfph').onclick=pick;$('#pfch').onclick=pick;$('#pfrm').onclick=()=>{photo=null;paint()};
@@ -943,23 +949,50 @@ function openProfile(){
     const gg=$('#pfgoogle');if(gg)gg.onclick=()=>openLogin();
   },false);
 }
-/* Entrar con la cuenta de Listopic (Google o email). Sin cuenta Pachote funciona igual; con ella, tus grupos te siguen y ves el chat de tus grupos de Listopic. */
+/* Tu cuenta de Pachote: con Google o con email. Es la misma que la de Listopic si usas el mismo Google o email (comparten el sistema de cuentas).
+   Sin cuenta Pachote funciona igual; con ella, tus grupos te siguen a cualquier móvil. */
 const GLOGO='<svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>';
-function openLogin(after){
-  sheet(`<h2>🔐 Tu cuenta de Listopic</h2><p class="hint">La misma de listopic.es. Tus grupos te siguen a cualquier móvil y, si un grupo está enlazado a un chat de Listopic, lo ves y escribes aquí. Los grupos de este dispositivo se pasan a tu cuenta.</p>
+function authMsg(e){const c=String(e&&e.code||'');
+  if(/popup-closed-by-user|cancelled-popup-request|user-cancelled/.test(c))return 'Cancelado.';
+  if(/popup-blocked/.test(c))return 'El navegador no dejó abrir la ventana de Google. Prueba con email y contraseña.';
+  if(/operation-not-supported|web-storage-unsupported/.test(c))return 'Este navegador no deja entrar con Google desde aquí. Prueba con email y contraseña.';
+  if(/wrong-password|invalid-credential|user-not-found|invalid-login/.test(c))return 'Email o contraseña incorrectos. Si siempre entras con Google, usa «Con Google».';
+  if(/invalid-email|missing-email/.test(c))return 'Ese email no es válido.';
+  if(/email-already-in-use|credential-already-in-use/.test(c))return 'Ya hay una cuenta con ese email: toca «Entrar».';
+  if(/account-exists-with-different-credential/.test(c))return 'Ese email ya tiene cuenta con contraseña: entra con email y contraseña.';
+  if(/weak-password/.test(c))return 'La contraseña tiene que tener al menos 6 caracteres.';
+  if(/too-many-requests/.test(c))return 'Demasiados intentos. Prueba en un rato.';
+  if(/network-request-failed/.test(c))return 'Sin conexión. Inténtalo de nuevo.';
+  return 'No se pudo entrar'+(c?` (${c.replace('auth/','')})`:'')+'.'}
+function openLogin(after,startUp){
+  const last=(ST.lastAccount&&ST.lastAccount())||null;let up=!!startUp;
+  const inp='border:1px solid var(--line);border-radius:11px;padding:10px 12px;background:var(--surface);color:var(--ink);font:inherit;font-size:16px';
+  sheet(`<h2>🔐 Tu cuenta de Pachote</h2><p class="hint" style="margin-top:-4px">Tus grupos te siguen a cualquier móvil. ¿Usas Listopic? Es la misma cuenta: entra con el mismo Google o email.</p>
+    <div class="seg" id="lmode"><button data-k="in" aria-pressed="${!up}">Entrar</button><button data-k="up" aria-pressed="${up}">Crear cuenta</button></div>
+    ${last&&last.email?`<p class="hint" data-lastline style="margin:0;text-align:center">La última vez entraste${last.google?' con Google':''} como <b>${esc(last.email)}</b>.</p>`:''}
     <button class="btn lpbtn" data-login="google">${GLOGO}Con Google</button>
     <button class="btn sec" data-login="mail">✉️ Con email y contraseña</button>
-    <div data-mailf hidden style="display:flex;flex-direction:column;gap:8px"><input type="email" data-lemail autocomplete="email" placeholder="Tu email de Listopic" style="border:1px solid var(--line);border-radius:11px;padding:10px 12px;background:var(--surface);color:var(--ink);font:inherit;font-size:16px"><input type="password" data-lpass autocomplete="current-password" placeholder="Contraseña" style="border:1px solid var(--line);border-radius:11px;padding:10px 12px;background:var(--surface);color:var(--ink);font:inherit;font-size:16px"><div class="err" hidden></div><button class="btn" data-login="mailgo">Entrar</button><button class="ghost" data-login="reset" style="align-self:center">He olvidado la contraseña</button></div>
-    <p class="hint" style="text-align:center">¿Sin cuenta? <a href="https://listopic.es/login" target="_blank" rel="noopener">Créala gratis en Listopic</a> y vuelve.</p>
+    <div data-mailf hidden style="display:flex;flex-direction:column;gap:8px"><input type="email" data-lemail autocomplete="email" placeholder="Tu email" value="${esc(last&&!last.google?last.email:'')}" style="${inp}"><input type="password" data-lpass autocomplete="current-password" placeholder="Contraseña" style="${inp}"><div class="err" hidden></div><button class="btn" data-login="mailgo">Entrar</button><button class="ghost" data-login="reset" style="align-self:center">He olvidado la contraseña</button></div>
+    <p class="hint" data-terms style="text-align:center;margin:0">Al crear la cuenta aceptas los <a href="#" data-info="terms">términos</a> y la <a href="#" data-info="privacy">privacidad</a> de Pachote.</p>
     <button class="btn sec" data-close>Ahora no</button>`,s=>{s.querySelector('[data-close]').onclick=closeSheet;
-    const q=k=>s.querySelector(`[data-login="${k}"]`);const err=t=>{const e=s.querySelector('[data-mailf] .err');e.textContent=t;e.hidden=!t};
-    const done=r=>{if(r==='redirect')return;toast(r==='linked'?'Listo: tus grupos quedan en tu cuenta':'Has entrado con tu cuenta de Listopic');const gu=ST.user();if(gu&&gu.name&&!myProf().name)ST.setProfile({name:gu.name.split(' ')[0]}).catch(()=>{});closeSheet();render();if(after)setTimeout(after,400)};
-    const g=q('google');g.onclick=()=>{g.disabled=true;ST.linkGoogle().then(done).catch(e=>{g.disabled=false;toast(e.code==='auth/popup-closed-by-user'||e.code==='auth/cancelled-popup-request'?'Cancelado':'No se pudo entrar con Google')})};
-    const m=q('mail');m.onclick=()=>{s.querySelector('[data-mailf]').hidden=false;m.hidden=true;s.querySelector('[data-lemail]').focus()};
-    const go=q('mailgo');go.onclick=()=>{const em=s.querySelector('[data-lemail]').value,pw=s.querySelector('[data-lpass]').value;if(!em||!pw)return err('Escribe tu email y tu contraseña.');go.disabled=true;err('');
-      ST.signInEmail(em,pw).then(done).catch(e=>{go.disabled=false;const c=String(e.code||'');err(/wrong-password|invalid-credential|user-not-found|invalid-email/.test(c)?'Email o contraseña incorrectos.':c==='auth/too-many-requests'?'Demasiados intentos. Prueba en un rato.':'No se pudo entrar.')})};
-    s.querySelector('[data-lpass]').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();go.click()}};
-    q('reset').onclick=()=>{const em=s.querySelector('[data-lemail]').value;if(!em)return err('Escribe tu email y te mandamos el enlace.');ST.resetPassword(em).then(()=>toast('Te hemos enviado un email para cambiar la contraseña')).catch(()=>err('No se pudo enviar el email.'))};
+    const q=k=>s.querySelector(`[data-login="${k}"]`);const errBox=s.querySelector('[data-mailf] .err');const err=t=>{errBox.textContent=t;errBox.hidden=!t};
+    const go=q('mailgo'),pw=s.querySelector('[data-lpass]'),em=s.querySelector('[data-lemail]');
+    const paint=()=>{s.querySelectorAll('#lmode button').forEach(b=>b.setAttribute('aria-pressed',String((b.dataset.k==='up')===up)));
+      go.textContent=up?'Crear cuenta':'Entrar';pw.placeholder=up?'Contraseña (6 caracteres o más)':'Contraseña';pw.autocomplete=up?'new-password':'current-password';
+      q('reset').hidden=up;s.querySelector('[data-terms]').hidden=!up;const ll=s.querySelector('[data-lastline]');if(ll)ll.hidden=up;err('')};
+    s.querySelectorAll('#lmode button').forEach(b=>b.onclick=()=>{up=b.dataset.k==='up';paint()});
+    s.querySelectorAll('[data-info]').forEach(a=>a.onclick=e=>{e.preventDefault();openInfo(a.dataset.info)});
+    const done=r=>{const gu=ST.user();toast(r==='linked'?'Cuenta creada: tus grupos ya están en ella':`Has entrado como ${gu&&gu.email||'tú'}`);
+      if(gu&&gu.name&&!myProf().name)ST.setProfile({name:gu.name.split(' ')[0]}).catch(()=>{});closeSheet();render();if(after)setTimeout(after,400)};
+    const g=q('google');g.onclick=()=>{g.disabled=true;ST.signInGoogle().then(done).catch(e=>{console.warn('google',e&&e.code);g.disabled=false;toast(authMsg(e))})};
+    const m=q('mail');const openMail=focus=>{s.querySelector('[data-mailf]').hidden=false;m.hidden=true;if(focus)(em.value?pw:em).focus()};m.onclick=()=>openMail(true);
+    if(last&&!last.google&&last.email&&!up)openMail(false);
+    go.onclick=()=>{const e1=em.value.trim(),p1=pw.value;if(!e1||!p1)return err('Escribe tu email y tu contraseña.');go.disabled=true;err('');
+      (up?ST.signUpEmail(e1,p1):ST.signInEmail(e1,p1)).then(done).catch(e=>{console.warn('email',e&&e.code);go.disabled=false;err(authMsg(e));
+        if(up&&/email-already-in-use|credential-already-in-use/.test(String(e.code||''))){up=false;paint();err(authMsg(e))}})};
+    pw.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();go.click()}};
+    q('reset').onclick=()=>{const e1=em.value.trim();if(!e1)return err('Escribe tu email y te mandamos el enlace.');ST.resetPassword(e1).then(()=>toast('Te hemos enviado un email para cambiar la contraseña')).catch(()=>err('No se pudo enviar el email.'))};
+    paint();
   },false);
 }
 /* Al enlazar: cada persona del grupo queda unida a su usuario de Listopic si su nombre de pila es único en el chat (y yo, a la persona que elegí). */
@@ -996,7 +1029,7 @@ function maybeAskInstall(){
 addEventListener('pachote-installable',()=>{render();setTimeout(maybeAskInstall,1200)});
 addEventListener('appinstalled',()=>{S.installed=true;window.__bip=null;render()});
 /* Menú general: perfil, tema, información de Pachote y el resto de Istari Core. */
-const APP_VERSION='v21';
+const APP_VERSION='v22';
 function themeSeg(){return `<div class="seg" id="mtheme">${[['auto','Automático'],['light','☀️ Claro'],['dark','🌙 Oscuro']].map(([k,n])=>`<button data-k="${k}" aria-pressed="${(document.documentElement.dataset.theme||'auto')===k}">${n}</button>`).join('')}</div>`}
 function bindTheme(s){s.querySelectorAll('#mtheme button').forEach(b=>b.onclick=()=>{const k=b.dataset.k;if(k==='auto')delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=k;
   try{k==='auto'?localStorage.removeItem('pachote_theme'):localStorage.setItem('pachote_theme',k)}catch(x){}s.querySelectorAll('#mtheme button').forEach(x=>x.setAttribute('aria-pressed',x===b))})}
@@ -1006,7 +1039,7 @@ function openMenu(){
     :`<button class="mitem" data-m="${act}"><span class="ico">${ico}</span><span class="mt"><b>${t}</b>${sub?`<small>${sub}</small>`:''}</span><span class="chev">›</span></button>`;
   sheet(`<button class="mitem mprof" data-m="profile">${pr.photo?`<span class="av ph" style="background:url('${esc(pr.photo)}')"></span>`:`<span class="av" style="background:var(--accent)">${esc(initials(pr.name||u.name||'?'))}</span>`}
       <span class="mt"><b>${esc(pr.name||u.name||'Tu perfil')}</b><small>${u.anon?(pr.name?'Sin cuenta · toca para editar':'Pon tu nombre y tu foto'):esc(u.email)}</small></span><span class="chev">›</span></button>
-    ${ST&&ST.kind==='cloud'?(u.anon?`<button class="btn lpbtn" data-m="login">🔐 Entrar con tu cuenta de Listopic</button><p class="hint" style="margin:-6px 0 0;text-align:center">Opcional: tus grupos en cualquier móvil y el chat de tus grupos de Listopic aquí.</p>`
+    ${ST&&ST.kind==='cloud'?(u.anon?`<button class="btn lpbtn" data-m="login">🔐 Entrar o crear cuenta</button><p class="hint" style="margin:-6px 0 0;text-align:center">Opcional: tus grupos en cualquier móvil. Si usas Listopic, es la misma cuenta.</p>`
       :`<button class="ghost" data-m="logout" style="align-self:center">Cerrar sesión</button>`):''}
     <div class="field"><span class="flabel">Tema</span>${themeSeg()}</div>
     <div><div class="mgh">Pachote</div><div class="mgroup">
@@ -1021,7 +1054,7 @@ function openMenu(){
     bindTheme(s);s.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{const m=b.dataset.m;
       if(m==='profile')return openProfile();
       if(m==='login')return openLogin();
-      if(m==='logout'){const box=document.createElement('div');box.className='confirm';box.innerHTML=`Tus grupos se quedan guardados en tu cuenta: para volver a verlos en este móvil, entra otra vez con ella.<div class="actions"><button class="btn sec" data-no>No, volver</button><button class="btn" style="background:var(--neg);color:#fff" data-yes>Cerrar sesión</button></div>`;
+      if(m==='logout'){const box=document.createElement('div');box.className='confirm';box.innerHTML=`Tus grupos se quedan guardados en tu cuenta: para volver a verlos en este móvil, entra otra vez con ella (te lo pondremos fácil).<div class="actions"><button class="btn sec" data-no>No, volver</button><button class="btn" style="background:var(--neg);color:#fff" data-yes>Cerrar sesión</button></div>`;
         b.replaceWith(box);box.querySelector('[data-no]').onclick=openMenu;box.querySelector('[data-yes]').onclick=()=>ST.signOut().then(()=>location.reload()).catch(()=>toast('No se pudo cerrar sesión'));return}
       openInfo(m)})},false);
 }
@@ -1035,7 +1068,7 @@ function openInfo(k){
     <p><b>Qué se guarda.</b> Lo que apuntáis en cada grupo: nombre del grupo, nombres de las personas, familias, importes, conceptos y fechas de los movimientos. Si quieres, tu nombre y una foto pequeña de perfil. Para saber quién tiene acceso a cada grupo se usa un identificador anónimo de este dispositivo y, si conectas Google, tu correo.</p>
     <p><b>Dónde.</b> En Google Firebase (base de datos Firestore y autenticación), en el mismo proyecto que Listopic, y una copia en este dispositivo para que funcione sin conexión. Las preferencias (tema, pestaña, borradores) se quedan solo en el dispositivo.</p>
     <p><b>Quién lo ve.</b> Solo quien tiene el link del grupo. Si el grupo se enlaza con un chat de Listopic, también la gente de ese chat: ve el resumen (total, saldos, pagos pendientes y últimos gastos) y puede entrar sin link. Quien lo administra puede cambiar el link, quitar el acceso a cualquier dispositivo o desenlazar el chat.</p>
-    <p><b>Tu cuenta.</b> Si entras con tu cuenta de Listopic, tus grupos quedan unidos a ella y ves aquí los mensajes de los chats enlazados en los que estás.</p>
+    <p><b>Tu cuenta.</b> Es opcional. Si creas una o entras con la de Listopic (es la misma si usas el mismo Google o email), tus grupos quedan unidos a ella y te siguen a cualquier dispositivo. De la cuenta se guarda tu email y, si entras con Google, el nombre y la foto de Google.</p>
     <p><b>Para qué.</b> Solo para que la app funcione. Sin publicidad, sin analítica de uso y sin ceder ni vender datos a nadie.</p>
     <p><b>Borrar.</b> Quien administra un grupo puede borrarlo con todos sus movimientos desde ⚙️. Tu perfil lo cambias o vacías aquí. Para cualquier otra petición sobre tus datos (acceso, rectificación, supresión), escríbenos.</p>`],
   terms:['📄 Términos de uso',`<p>Pachote es una herramienta gratuita para anotar y repartir gastos entre personas que se conocen. Se ofrece tal cual, en fase beta, y puede cambiar o tener fallos.</p>
@@ -1063,6 +1096,8 @@ document.addEventListener('click',ev=>{
   else if(a==='profile'){openProfile()}
   else if(a==='menu'){openMenu()}
   else if(a==='install'){doInstall()}
+  else if(a==='relogin'){openLogin()}
+  else if(a==='forgetlast'){ST.forgetLast();render()}
   else if(a==='feat'){if(guard())return;const np=clone(plan());np.features={...featOf(np),[v]:true};FEAT=featOf(np);savePlan(np);
     toast(v==='families'?'👪 Familias activadas':'🧸 Niños activados')}
   else if(a==='home'){S.current=null;render();window.scrollTo({top:0});if(history.state&&history.state.g)try{history.back()}catch(x){}}
@@ -1472,10 +1507,10 @@ function openPlan(id){
      <div class="section-label" style="margin:6px 0 0">Dispositivos con acceso</div><div class="list" id="acclist"><div class="row"><span class="hint">Cargando…</span></div></div>
      <button class="ghost" id="pwho" style="align-self:flex-start">🙋 Cambiar quién soy yo</button>`)}
    ${ST&&ST.kind==='cloud'?gsec('listopic','💬','Chat de Listopic',p.chatId?'Enlazado':'Sin enlazar',p.chatId?`
-     <p class="hint">Enlazado con un grupo de chat de Listopic: los de ese chat ven el resumen de estas cuentas y entran sin link.</p>
+     <p class="hint">Enlazado con un chat de Listopic: los de ese chat ven el resumen de estas cuentas y entran sin link.</p>
      <div style="display:flex;flex-wrap:wrap;gap:8px" id="lprow"><a class="btn sm" style="text-decoration:none" target="_blank" rel="noopener" href="${LP}/chats/${encodeURIComponent(p.chatId)}">💬 Abrir el chat en Listopic ↗</a>${isAdm?'<button class="btn sm danger" id="lpunlink">Desenlazar</button>':''}</div>`
-     :acct.anon?`<p class="hint">Enlaza este grupo con un grupo de chat de Listopic: allí verán quién debe a quién y entrarán sin link. Hace falta tu cuenta de Listopic.</p><button class="btn sm" id="lplogin2" style="align-self:flex-start">Entrar con tu cuenta de Listopic</button>`
-     :isAdm?`<p class="hint">Elige un grupo de chat de Listopic: allí verán quién debe a quién y entrarán sin link.</p><div class="list" id="lpchats"><div class="row"><span class="hint">Cargando tus chats…</span></div></div>`
+     :acct.anon?`<p class="hint">Enlaza este grupo con un chat de Listopic (de grupo o con una persona): allí verán quién debe a quién y entrarán sin link. Hace falta entrar con tu cuenta de Listopic.</p><button class="btn sm" id="lplogin2" style="align-self:flex-start">Entrar con tu cuenta</button>`
+     :isAdm?`<p class="hint">Elige un chat de Listopic (de grupo o con una persona): allí verán quién debe a quién y entrarán sin link.</p><div class="list" id="lpchats"><div class="row"><span class="hint">Cargando tus chats…</span></div></div>`
      :'<p class="hint">Solo quien administra el grupo puede enlazarlo con un chat de Listopic.</p>'):''}
    <button class="fsec rowbtn" data-act="menu" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:13px 14px;border:none;font:inherit;color:inherit"><span class="ico">👤</span><span class="st" style="flex:1;font-weight:700">Perfil, tema y más</span><span class="ss">${esc(myProf().name||(acct.anon?'Sin cuenta':acct.email))} ›</span></button>
    ${gsec('opciones','🧩','Opciones',[F.families?'Familias':'',F.kids?'Niños':''].filter(Boolean).join(' · ')||'Grupo sencillo',`
@@ -1557,12 +1592,15 @@ function openPlan(id){
     /* Chat de Listopic */
     const lu=$('#lpunlink');if(lu)lu.onclick=()=>askDel($('#lprow'),'El chat dejará de ver estas cuentas. Nadie pierde el acceso que ya tiene.',()=>ST.unlinkChat(p.id,p.chatId).then(()=>{closeSheet();toast('Desenlazado del chat')}).catch(()=>toast('No se pudo desenlazar')));
     const ll=$('#lplogin2');if(ll)ll.onclick=()=>openLogin(()=>openPlan(p.id));
-    const lc=$('#lpchats');if(lc)ST.myChats().then(cs=>{
-      if(!cs.length){lc.innerHTML='<div class="row"><span class="hint">No estás en ningún grupo de chat de Listopic. Créalo allí (💬 → nuevo → 👥 Grupo) y vuelve.</span></div>';return}
-      lc.innerHTML=cs.slice(0,20).map(c=>{const n=Object.keys(c.pachote||{}).length;return `<button class="row" data-chat="${esc(c.id)}"><div class="main"><div class="t">${esc(c.groupName||'Grupo')}</div><div class="s">${(c.participants||[]).length} personas${n?` · ya tiene ${n} ${n===1?'cuenta':'cuentas'}`:''}</div></div><span class="chev">›</span></button>`}).join('');
-      lc.querySelectorAll('[data-chat]').forEach(b=>b.onclick=async()=>{const c=cs.find(x=>x.id===b.dataset.chat);b.disabled=true;
+    const lc=$('#lpchats');if(lc)ST.myChats().then(async cs=>{
+      if(!cs.length){lc.innerHTML='<div class="row"><span class="hint">No tienes chats en Listopic. Abre uno allí (💬 → nuevo) y vuelve.</span></div>';return}
+      cs=cs.slice(0,20);const me=ST.myUid();
+      /* Un chat con una persona se llama como ella. */
+      const names=await Promise.all(cs.map(c=>c.type==='group'?Promise.resolve(c.groupName||'Grupo'):ST.person((c.participants||[]).find(u=>u!==me)||'').then(x=>x.name).catch(()=>'Chat privado')));
+      lc.innerHTML=cs.map((c,i)=>{const n=Object.keys(c.pachote||{}).length;return `<button class="row" data-chat="${esc(c.id)}"><div class="main"><div class="t">${c.type==='group'?'👥':'👤'} ${esc(names[i])}</div><div class="s">${c.type==='group'?`${(c.participants||[]).length} personas`:'Chat privado'}${n?` · ya tiene ${n} ${n===1?'cuenta':'cuentas'}`:''}</div></div><span class="chev">›</span></button>`}).join('');
+      lc.querySelectorAll('[data-chat]').forEach(b=>b.onclick=async()=>{const i=cs.findIndex(x=>x.id===b.dataset.chat),c=cs[i];b.disabled=true;
         try{const people=await Promise.all((c.participants||[]).map(u=>ST.person(u).then(x=>({uid:u,name:x.name}))));
-          await ST.linkChat(p.id,c,matchMembers(plan(),people));closeSheet();toast(`Enlazado con «${c.groupName||'el chat'}»`)}catch(e){console.error(e);b.disabled=false;toast('No se pudo enlazar')}})})
+          await ST.linkChat(p.id,c,matchMembers(plan(),people));closeSheet();toast(`Enlazado con «${names[i]}»`)}catch(e){console.error(e);b.disabled=false;toast('No se pudo enlazar')}})})
       .catch(()=>{lc.innerHTML='<div class="row"><span class="hint">No se pudieron cargar tus chats.</span></div>'});
     const aa=$('#palladm');if(aa)aa.onchange=()=>{const np=clone(plan());if(aa.checked)np.allAdmin=true;else delete np.allAdmin;savePlan(np);toast(aa.checked?'Ahora todos los que entran administran':'Solo administran los que tú elijas')};
     const gg=$('#pgoogle');if(gg)gg.onclick=()=>openLogin();

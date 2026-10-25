@@ -32,9 +32,7 @@ async function firebaseStore(){
   let db;try{db=F.initializeFirestore(app,{localCache:F.persistentLocalCache({tabManager:F.persistentMultipleTabManager()})})}catch(e){db=F.getFirestore(app)}
   if(emu){A.connectAuthEmulator(auth,'http://127.0.0.1:9099',{disableWarnings:true});F.connectFirestoreEmulator(db,'127.0.0.1',8080)}
   await A.setPersistence(auth,A.browserLocalPersistence).catch(()=>{});
-  /* Vuelta de un inicio de sesión por redirección (si el navegador no dejó abrir la ventanita de Google). */
   let pendingAdopt=null;
-  try{await A.getRedirectResult(auth)}catch(e){if(e.code==='auth/credential-already-in-use'){const cred=A.GoogleAuthProvider.credentialFromError(e);pendingAdopt=auth.currentUser&&auth.currentUser.isAnonymous?await auth.currentUser.getIdToken().catch(()=>null):null;if(cred)await A.signInWithCredential(auth,cred).catch(()=>{})}else console.warn(e)}
   const user=await new Promise(res=>{const un=A.onAuthStateChanged(auth,async u=>{if(u){un();res(u)}else{try{await A.signInAnonymously(auth)}catch(e){un();res(null)}}})});
   if(!user)throw new Error('auth');
   /* Abierto desde Listopic: entra con esa misma cuenta y, si este dispositivo iba sin cuenta, se lleva sus grupos. */
@@ -79,6 +77,9 @@ async function firebaseStore(){
     for(const [g,t] of tokens){try{await api.join(g,t)}catch(x){}}
   }
   const knownTokens=()=>{const kn=known();return [...new Map([...Object.keys(myGroups).map(g=>[g,plans[g]?._core?.inviteToken]),...Object.keys(kn).map(g=>[g,kn[g].t])].filter(x=>x[1])).entries()]};
+  const LAST='pachote_last';
+  /* Guarda con qué cuenta se entró (email y si fue con Google); al cerrar sesión, marca que se salió. */
+  const remember=out=>{const u=auth.currentUser;if(!u||u.isAnonymous||!u.email)return;try{localStorage.setItem(LAST,JSON.stringify({email:u.email,google:u.providerData.some(p=>p.providerId==='google.com'),out:!!out}))}catch(e){}};
   const names={};
   const api={
     kind:'cloud',
@@ -89,9 +90,9 @@ async function firebaseStore(){
     /* Nombre y foto de la gente de Listopic (perfil público). */
     async person(u){if(names[u])return names[u];const s=await F.getDoc(F.doc(db,'publicProfiles',u)).catch(()=>null);const d=s&&s.exists()?s.data():{};
       return names[u]={name:d.displayName||d.username||d.name||'Alguien',photo:d.photoUrl||''}},
-    /* Mis chats de grupo de Listopic, para enlazar uno. */
+    /* Mis chats de Listopic (de grupo o con una persona), para enlazar uno. */
     async myChats(){const s=await F.getDocs(F.query(F.collection(db,'chats'),F.where('participants','array-contains',uid())));
-      return s.docs.map(d=>({id:d.id,...d.data()})).filter(c=>c.type==='group').sort((a,b)=>((b.updatedAt&&b.updatedAt.toMillis&&b.updatedAt.toMillis())||0)-((a.updatedAt&&a.updatedAt.toMillis&&a.updatedAt.toMillis())||0))},
+      return s.docs.map(d=>({id:d.id,...d.data()})).filter(c=>c.type==='group'||c.type==='private').sort((a,b)=>((b.updatedAt&&b.updatedAt.toMillis&&b.updatedAt.toMillis())||0)-((a.updatedAt&&a.updatedAt.toMillis&&a.updatedAt.toMillis())||0))},
     async linkChat(g,chat,members){const p=plans[g]?._core;if(!p)throw new Error('grupo');
       await F.updateDoc(gref(g),{chatId:chat.id,members:clean(members),updated:Date.now()});
       await F.updateDoc(F.doc(db,'chats',chat.id),{['pachote.'+g]:clean({name:p.name,emoji:p.emoji||null})});
@@ -148,32 +149,38 @@ async function firebaseStore(){
     profile:()=>myProfile,
     onProfile(cb){onProf=cb},
     setProfile:pr=>F.setDoc(uref(uid()),{profile:clean(pr)},{merge:true}),
-    async linkGoogle(){
-      const prov=new A.GoogleAuthProvider();
-      prov.setCustomParameters({prompt:'select_account'});
-      try{await A.linkWithPopup(auth.currentUser,prov);return 'linked'}
-      catch(e){
-        if(['auth/popup-blocked','auth/operation-not-supported-in-this-environment','auth/web-storage-unsupported'].includes(e.code)){await A.linkWithRedirect(auth.currentUser,prov);return 'redirect'}
-        if(e.code!=='auth/credential-already-in-use')throw e;
-        /* Ya tenías cuenta (en Listopic o aquí): entramos con ella y nos llevamos los grupos de este dispositivo. */
-        const tokens=knownTokens();const prevTok=await auth.currentUser.getIdToken().catch(()=>null);
-        const cred=A.GoogleAuthProvider.credentialFromError(e);await A.signInWithCredential(auth,cred);
-        await adoptFrom(prevTok,tokens);
-        return 'switched';
-      }
+    /* Entrar con Google: la cuenta es la misma en Pachote y en Listopic. Si este dispositivo iba sin cuenta, sus grupos pasan a ella.
+       Siempre con ventanita: la redirección no vuelve bien desde otro dominio (Safari, Chrome y Firefox ya no lo dejan). */
+    async signInGoogle(){
+      const prov=new A.GoogleAuthProvider();prov.setCustomParameters({prompt:'select_account'});
+      const was=auth.currentUser;const tokens=knownTokens();const prevTok=was&&was.isAnonymous?await was.getIdToken().catch(()=>null):null;
+      await A.signInWithPopup(auth,prov);
+      if(prevTok&&auth.currentUser.uid!==was.uid)await adoptFrom(prevTok,tokens);
+      remember();return 'switched';
     },
-    /* Entrar con el email y la contraseña de Listopic. */
+    /* Entrar con email y contraseña. */
     async signInEmail(email,pass){
       const tokens=knownTokens();const was=auth.currentUser;const prevTok=was&&was.isAnonymous?await was.getIdToken().catch(()=>null):null;
       await A.signInWithEmailAndPassword(auth,String(email).trim(),pass);
-      if(prevTok)await adoptFrom(prevTok,tokens);
-      return 'switched';
+      if(prevTok&&auth.currentUser.uid!==was.uid)await adoptFrom(prevTok,tokens);
+      remember();return 'switched';
+    },
+    /* Crear cuenta con email: si este dispositivo iba sin cuenta, la cuenta nueva es este mismo usuario (con sus grupos). */
+    async signUpEmail(email,pass){
+      email=String(email).trim();const was=auth.currentUser;
+      if(was&&was.isAnonymous){await A.linkWithCredential(was,A.EmailAuthProvider.credential(email,pass));await was.getIdToken(true).catch(()=>{})}
+      else await A.createUserWithEmailAndPassword(auth,email,pass);
+      remember();return 'linked';
     },
     resetPassword:email=>A.sendPasswordResetEmail(auth,String(email).trim()),
+    /* La última cuenta usada en este dispositivo, para ofrecer volver a entrar con ella. */
+    lastAccount:()=>{try{return JSON.parse(localStorage.getItem(LAST))||null}catch(e){return null}},
+    forgetLast:()=>{try{localStorage.removeItem(LAST)}catch(e){}},
     /* Cerrar sesión: los grupos se quedan en la cuenta; este dispositivo vuelve a empezar sin cuenta. */
-    async signOut(){try{localStorage.removeItem(KN)}catch(e){}await A.signOut(auth)}
+    async signOut(){remember(true);try{localStorage.removeItem(KN)}catch(e){}await A.signOut(auth)}
   };
   if(pendingAdopt)adoptFrom(pendingAdopt,[]);
+  remember();
   return api;
 }
 
@@ -205,11 +212,11 @@ function mockStore(){
     token:g=>load().groups[g]?.core.inviteToken||'',myUid:()=>me,
     profile:()=>load().users[me]?.profile||null,onProfile(f){pcb=f},
     async setProfile(pr){const d=load();(d.users[me]??={groups:{}}).profile={...(d.users[me].profile||{}),...clean(pr)};saveDb(d)},
-    async linkGoogle(){throw new Error('mock')},signOut:async()=>{},
+    async signInGoogle(){throw new Error('mock')},signOut:async()=>{},
     migrate:async()=>null,async putSummary(g,sum){const d=load();if(d.groups[g]){d.groups[g].core.summary=clean(sum);saveDb(d)}},
     async person(){return {name:'Alguien',photo:''}},async myChats(){return []},
     async linkChat(){throw new Error('mock')},async unlinkChat(){throw new Error('mock')},
-    async signInEmail(){throw new Error('mock')},async resetPassword(){throw new Error('mock')}
+    async signInEmail(){throw new Error('mock')},async signUpEmail(){throw new Error('mock')},async resetPassword(){throw new Error('mock')},lastAccount:()=>null,forgetLast:()=>{}
   };
 }
 
