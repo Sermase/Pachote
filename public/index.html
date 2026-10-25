@@ -1,6 +1,8 @@
 <!doctype html>
 <html lang="es"><head><meta charset="utf-8">
-<script>window.__bip=null;addEventListener('beforeinstallprompt',e=>{e.preventDefault();window.__bip=e;window.dispatchEvent(new Event('pachote-installable'))});
+<script>/* Abierto desde Listopic con «#…auth=<token>»: se guarda para entrar con esa cuenta y se borra del enlace al momento. */
+(function(){var m=location.hash.match(/[#&]auth=([\w.-]+)/);if(!m)return;window.__handoff=m[1];var h=location.hash.replace(/[#&]auth=[\w.-]+/,'');if(h&&h[0]!=='#')h='#'+h;try{history.replaceState(history.state,'',location.pathname+location.search+(h.length>1?h:''))}catch(e){}})();
+window.__bip=null;addEventListener('beforeinstallprompt',e=>{e.preventDefault();window.__bip=e;window.dispatchEvent(new Event('pachote-installable'))});
 try{const t=localStorage.getItem('pachote_theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#2F3FD0">
@@ -427,20 +429,6 @@ details.adv[open] summary{margin-bottom:10px}
 .ssum .txt span.bad{color:var(--neg);font-weight:600}
 .row3{display:grid;grid-template-columns:1.4fr 1fr;gap:10px}
 @media (max-width:440px){.badge span{display:none}.badge::before{width:9px;height:9px}.stat{padding:10px 10px}.stat b{font-size:16px}.stat span{font-size:10px;letter-spacing:.05em}.two{grid-template-columns:1fr}.tabs button{font-size:13px}.srow .sv{width:66px}.srow input{width:72px}}
-/* Chat del grupo de Listopic enlazado */
-.lpchat{display:flex;flex-direction:column;gap:6px;min-height:240px;max-height:58vh;overflow:auto;padding:4px 2px}
-.lpmsg{max-width:82%;align-self:flex-start;display:flex;gap:8px;align-items:flex-end}
-.lpmsg.me{align-self:flex-end;flex-direction:row-reverse}
-.lpmsg .bub{background:var(--surface);box-shadow:var(--shadow);border-radius:16px 16px 16px 6px;padding:7px 11px;font-size:15px;line-height:1.35;white-space:pre-wrap;word-break:break-word}
-.lpmsg.me .bub{background:var(--accent);color:var(--accent-ink);border-radius:16px 16px 6px 16px}
-.lpmsg .who{display:block;font-size:11px;font-weight:700;color:var(--accent);margin-bottom:1px}
-.lpmsg .av{width:26px;height:26px;font-size:11px;flex:none}
-.lpev{align-self:center;font-size:12px;color:var(--muted);background:var(--sunk);border-radius:999px;padding:3px 10px;text-align:center;max-width:90%}
-.lpcard{font-size:12px;color:var(--muted);display:block;margin-top:3px}
-.lpmsg.me .lpcard{color:inherit;opacity:.78}
-.lpday{align-self:center;font-size:11px;font-weight:700;color:var(--muted);margin:6px 0 2px}
-.lpsend{display:flex;gap:8px;align-items:flex-end}
-.lpsend textarea{flex:1;resize:none;border:1px solid var(--line);border-radius:18px;padding:9px 13px;background:var(--surface);color:var(--ink);font:inherit;font-size:16px;max-height:120px}
 .lpbtn{display:flex;gap:8px;align-items:center;justify-content:center}
 </style>
 </head><body>
@@ -796,7 +784,7 @@ function render(){
   app.innerHTML=`
   <header class="gbanner" style="--gc:${gc}">
     <div class="gtop"><button class="iconbtn wb" data-act="home" aria-label="Volver a mis grupos" title="Mis grupos"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button><div class="spacer"></div>${badge}
-      ${p.chatId?'<button class="iconbtn wb" aria-label="Chat del grupo en Listopic" title="Chat del grupo" data-act="chat" style="font-size:17px">💬</button>':''}<button class="iconbtn wb" aria-label="Configuración del grupo" title="Configuración del grupo" data-act="editplan">${ICON.gear}</button></div>
+      <button class="iconbtn wb" aria-label="Configuración del grupo" title="Configuración del grupo" data-act="editplan">${ICON.gear}</button></div>
     <div class="gtitle"><span class="gav lg">${esc(groupEmoji(p))}</span><h1>${esc(p.name)}</h1><p>${esc(p.desc||groupMeta(p))}</p></div>
     <div class="gfig">${mine?`<div><span>Mi parte</span><b class="num">${moneyK(mine.spent)}</b></div>`:''}<div><span>Gasto total</span><b class="num" title="${money(c.spent)}">${moneyK(c.spent)}</b></div>
       ${mine?`<div><span>${esc(mine.lab)}</span><b class="num">${mine.bal?money(Math.abs(mine.bal)):'✓'}</b></div>`:(()=>{const nc=Object.values(c.cons).filter(v=>v>0).length;return `<div><span>Por cabeza</span><b class="num">${nc?moneyK(Math.round((c.spent-c.income)/nc)):'—'}</b></div>`})()}</div>
@@ -981,39 +969,10 @@ function matchMembers(p,people){const fn=t=>String(t||'').trim().split(/\s+/)[0]
     const x=people.find(y=>!taken.has(y.uid)&&cnt[fn(y.name)]===1&&fn(y.name)===fn(m.name));if(!x)return m;taken.add(x.uid);return {...m,luid:x.uid}})}
 /* Tras cambiar de cuenta los grupos tardan un momento en volver a cargarse. */
 function whenPlan(id,fn,tries=30){const p=S.plans[id];if(p)return fn(p);if(tries>0)setTimeout(()=>whenPlan(id,fn,tries-1),200)}
-/* Chat del grupo de Listopic enlazado: los mismos mensajes que en Listopic. */
+/* Desde dónde entró una cuenta (la etiqueta guarda el navegador), en una palabra. */
+function devOf(l){l=String(l||'');return l==='Listopic'?'Listopic':/iPhone|iPad/.test(l)?'iPhone':/Android/.test(l)?'Android':/Macintosh/.test(l)?'Mac':/Windows/.test(l)?'Windows':/Linux/.test(l)?'Linux':''}
+/* Listopic, para abrir allí el chat enlazado. */
 const LP='https://listopic.es';
-function lpDay(ms){const d=new Date(ms),t=new Date(),y=new Date(t.getTime()-864e5);const same=(a,b)=>a.toDateString()===b.toDateString();return same(d,t)?'Hoy':same(d,y)?'Ayer':d.toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long'})}
-const LPCARD={pachote:'💸 Cuentas',invite:'🍽️ Invitación a comer',poll:'🗳️ Encuesta',datepoll:'📅 ¿Cuándo quedamos?',share:'🔗 Algo de Listopic','review-share':'⭐ Una reseña',image:'📷 Foto'};
-function openChat(p){
-  if(!p||!p.chatId||!ST||!ST.watchChat)return;const u=ST.user()||{anon:true};
-  if(u.anon)return sheet(`<h2>💬 Chat del grupo</h2><p class="hint">«${esc(p.name)}» está enlazado con un chat de <b>Listopic</b>. Para leerlo y escribir desde aquí, entra con tu cuenta de Listopic.</p>
-    <div class="actions"><button class="btn sec" data-close>Ahora no</button><button class="btn" id="lplogin">Entrar</button></div>`,s=>{s.querySelector('[data-close]').onclick=closeSheet;s.querySelector('#lplogin').onclick=()=>openLogin(()=>whenPlan(p.id,openChat))},false);
-  const chatId=p.chatId;
-  sheet(`<div style="display:flex;align-items:center;gap:10px"><span style="font-size:24px">💬</span><h2 style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="lpname">Chat del grupo</h2><a class="ghost" href="${LP}/chats/${encodeURIComponent(chatId)}" target="_blank" rel="noopener">Listopic ↗</a></div>
-    <div class="lpchat" id="lpbox"><p class="hint" style="text-align:center">Cargando…</p></div>
-    <form class="lpsend" id="lpform"><textarea id="lptxt" rows="1" maxlength="2000" placeholder="Escribe un mensaje…" aria-label="Mensaje"></textarea><button class="btn sm" aria-label="Enviar">Enviar</button></form>`,s=>{
-    const box=s.querySelector('#lpbox'),ta=s.querySelector('#lptxt');let first=true;
-    const un1=ST.watchChatInfo(chatId,c=>{const n=s.querySelector('#lpname');if(n&&c&&c.groupName)n.textContent=c.groupName});
-    const un2=ST.watchChat(chatId,list=>{
-      if(list==null){box.innerHTML='<p class="hint" style="text-align:center">Tu cuenta de Listopic no está en este chat. Pide que te añadan o entra con el enlace de invitación del grupo.</p>';s.querySelector('#lpform').hidden=true;return}
-      const me=ST.myUid();
-      Promise.all([...new Set(list.map(m=>m.senderId))].map(id=>ST.person(id).then(x=>[id,x]))).then(ps=>{const P=Object.fromEntries(ps);let lastDay='';
-        const near=box.scrollHeight-box.scrollTop-box.clientHeight<80;
-        box.innerHTML=list.length?list.map((m,i)=>{const day=lpDay(m.at);const sep=day!==lastDay?`<div class="lpday">${esc(day)}</div>`:'';lastDay=day;
-          if(m.type==='event')return sep+`<div class="lpev">${esc(m.text||'')}</div>`;
-          const mine=m.senderId===me;const who=P[m.senderId]||{name:'Alguien'};const prev=list[i-1];const cont=!sep&&prev&&prev.senderId===m.senderId&&prev.type!=='event';
-          const card=m.type&&m.type!=='text'?`<span class="lpcard">${LPCARD[m.type]||'🔗 Algo de Listopic'} · ábrelo en Listopic</span>`:'';
-          return sep+`<div class="lpmsg${mine?' me':''}">${mine?'':cont?'<span class="av" style="visibility:hidden"></span>':avHTML({name:who.name,photo:who.photo},HC[(m.senderId.charCodeAt(0)||0)%HC.length])}<div class="bub">${!mine&&!cont?`<span class="who">${esc(who.name.split(' ')[0])}</span>`:''}${esc(m.text||'')}${card}</div></div>`}).join('')
-          :'<p class="hint" style="text-align:center">Aún no hay mensajes. ¡Saluda! 👋</p>';
-        if(first||near){box.scrollTop=box.scrollHeight;first=false}})});
-    S.onSheetClose=()=>{un1();un2()};
-    const send=()=>{const t=ta.value.trim();if(!t)return;ta.value='';ta.style.height='auto';ST.sendChat(chatId,t).catch(()=>{toast('No se pudo enviar');ta.value=t})};
-    s.querySelector('#lpform').onsubmit=e=>{e.preventDefault();send()};
-    ta.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey&&!matchMedia('(pointer:coarse)').matches){e.preventDefault();send()}};
-    ta.oninput=()=>{ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight+2,120)+'px'};
-  },false,true);
-}
 /* Instalar como app: botón en inicio mientras no esté instalada, y una sola invitación la primera vez. */
 const isStandalone=()=>matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
 const isIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
@@ -1037,7 +996,7 @@ function maybeAskInstall(){
 addEventListener('pachote-installable',()=>{render();setTimeout(maybeAskInstall,1200)});
 addEventListener('appinstalled',()=>{S.installed=true;window.__bip=null;render()});
 /* Menú general: perfil, tema, información de Pachote y el resto de Istari Core. */
-const APP_VERSION='v20';
+const APP_VERSION='v21';
 function themeSeg(){return `<div class="seg" id="mtheme">${[['auto','Automático'],['light','☀️ Claro'],['dark','🌙 Oscuro']].map(([k,n])=>`<button data-k="${k}" aria-pressed="${(document.documentElement.dataset.theme||'auto')===k}">${n}</button>`).join('')}</div>`}
 function bindTheme(s){s.querySelectorAll('#mtheme button').forEach(b=>b.onclick=()=>{const k=b.dataset.k;if(k==='auto')delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=k;
   try{k==='auto'?localStorage.removeItem('pachote_theme'):localStorage.setItem('pachote_theme',k)}catch(x){}s.querySelectorAll('#mtheme button').forEach(x=>x.setAttribute('aria-pressed',x===b))})}
@@ -1102,7 +1061,6 @@ document.addEventListener('click',ev=>{
   else if(a==='person')openPerson(v);
   else if(a==='open'){S.mq='';S.current=v;S.tab='movs';render();window.scrollTo({top:0});try{history.pushState({g:v},'','#g')}catch(x){}askWho()}
   else if(a==='profile'){openProfile()}
-  else if(a==='chat'){openChat(plan())}
   else if(a==='menu'){openMenu()}
   else if(a==='install'){doInstall()}
   else if(a==='feat'){if(guard())return;const np=clone(plan());np.features={...featOf(np),[v]:true};FEAT=featOf(np);savePlan(np);
@@ -1514,10 +1472,10 @@ function openPlan(id){
      <div class="section-label" style="margin:6px 0 0">Dispositivos con acceso</div><div class="list" id="acclist"><div class="row"><span class="hint">Cargando…</span></div></div>
      <button class="ghost" id="pwho" style="align-self:flex-start">🙋 Cambiar quién soy yo</button>`)}
    ${ST&&ST.kind==='cloud'?gsec('listopic','💬','Chat de Listopic',p.chatId?'Enlazado':'Sin enlazar',p.chatId?`
-     <p class="hint">Enlazado con un grupo de chat de Listopic: los de ese chat ven el resumen de estas cuentas y entran sin link. El chat se abre con 💬 arriba.</p>
-     <div style="display:flex;flex-wrap:wrap;gap:8px" id="lprow"><button class="btn sm" id="lpopen">💬 Abrir el chat</button><a class="btn sm sec" style="text-decoration:none" target="_blank" rel="noopener" href="${LP}/chats/${encodeURIComponent(p.chatId)}">Abrir en Listopic ↗</a>${isAdm?'<button class="btn sm danger" id="lpunlink">Desenlazar</button>':''}</div>`
-     :acct.anon?`<p class="hint">Enlaza este grupo con un grupo de chat de Listopic: allí verán quién debe a quién y entrarán sin link, y aquí tendréis el chat. Hace falta tu cuenta de Listopic.</p><button class="btn sm" id="lplogin2" style="align-self:flex-start">Entrar con tu cuenta de Listopic</button>`
-     :isAdm?`<p class="hint">Elige un grupo de chat de Listopic: allí verán quién debe a quién y entrarán sin link, y aquí tendréis el chat.</p><div class="list" id="lpchats"><div class="row"><span class="hint">Cargando tus chats…</span></div></div>`
+     <p class="hint">Enlazado con un grupo de chat de Listopic: los de ese chat ven el resumen de estas cuentas y entran sin link.</p>
+     <div style="display:flex;flex-wrap:wrap;gap:8px" id="lprow"><a class="btn sm" style="text-decoration:none" target="_blank" rel="noopener" href="${LP}/chats/${encodeURIComponent(p.chatId)}">💬 Abrir el chat en Listopic ↗</a>${isAdm?'<button class="btn sm danger" id="lpunlink">Desenlazar</button>':''}</div>`
+     :acct.anon?`<p class="hint">Enlaza este grupo con un grupo de chat de Listopic: allí verán quién debe a quién y entrarán sin link. Hace falta tu cuenta de Listopic.</p><button class="btn sm" id="lplogin2" style="align-self:flex-start">Entrar con tu cuenta de Listopic</button>`
+     :isAdm?`<p class="hint">Elige un grupo de chat de Listopic: allí verán quién debe a quién y entrarán sin link.</p><div class="list" id="lpchats"><div class="row"><span class="hint">Cargando tus chats…</span></div></div>`
      :'<p class="hint">Solo quien administra el grupo puede enlazarlo con un chat de Listopic.</p>'):''}
    <button class="fsec rowbtn" data-act="menu" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:13px 14px;border:none;font:inherit;color:inherit"><span class="ico">👤</span><span class="st" style="flex:1;font-weight:700">Perfil, tema y más</span><span class="ss">${esc(myProf().name||(acct.anon?'Sin cuenta':acct.email))} ›</span></button>
    ${gsec('opciones','🧩','Opciones',[F.families?'Familias':'',F.kids?'Niños':''].filter(Boolean).join(' · ')||'Grupo sencillo',`
@@ -1597,7 +1555,6 @@ function openPlan(id){
     const rg=$('#pregen');if(rg)rg.onclick=()=>{rg.disabled=true;ST.regenToken(p.id).then(()=>{toast('Link cambiado: el anterior ya no sirve');setTimeout(()=>{const l=$('#plink');if(l)l.value=inviteLink(p.id)},400)}).catch(()=>toast('No se pudo cambiar el link')).finally(()=>rg.disabled=false)};
     $('#pwho').onclick=()=>askWho(true);
     /* Chat de Listopic */
-    const lo=$('#lpopen');if(lo)lo.onclick=()=>openChat(plan());
     const lu=$('#lpunlink');if(lu)lu.onclick=()=>askDel($('#lprow'),'El chat dejará de ver estas cuentas. Nadie pierde el acceso que ya tiene.',()=>ST.unlinkChat(p.id,p.chatId).then(()=>{closeSheet();toast('Desenlazado del chat')}).catch(()=>toast('No se pudo desenlazar')));
     const ll=$('#lplogin2');if(ll)ll.onclick=()=>openLogin(()=>openPlan(p.id));
     const lc=$('#lpchats');if(lc)ST.myChats().then(cs=>{
@@ -1621,7 +1578,7 @@ function openPlan(id){
     if(lgd){lgd.addEventListener('toggle',()=>{if(lgd.open)loadLog()});if(lgd.open)loadLog()}
     if(ST&&ST.watchAccess){if(S.accUnsub)S.accUnsub();S.accUnsub=ST.watchAccess(p.id,list=>{const box=s.querySelector('#acclist');if(!box)return;const mine=ST.myUid();
       box.innerHTML=list.sort((a,b)=>(a.joined||0)-(b.joined||0)).map(a=>{const m=p.members.find(x=>x.id===a.memberId);const isMe=a.uid===mine;
-        return `<div class="row"><div class="main"><div class="t">${m?esc(m.name):'Sin identificar'}${isMe?' <span class="chip">este dispositivo</span>':''}</div><div class="s">${a.role==='admin'?'Administrador':a.role==='viewer'?'Solo ver':'Puede apuntar'} · desde ${esc(new Date(a.joined||0).toLocaleDateString('es-ES',{day:'numeric',month:'short'}))}</div></div>
+        return `<div class="row"><div class="main"><div class="t">${m?esc(m.name):'Sin identificar'}${isMe?' <span class="chip">este dispositivo</span>':''}</div><div class="s">${a.role==='admin'?'Administrador':a.role==='viewer'?'Solo ver':'Puede apuntar'} · desde ${esc(new Date(a.joined||0).toLocaleDateString('es-ES',{day:'numeric',month:'short'}))}${devOf(a.label)?` · ${devOf(a.label)}`:''}</div></div>
         ${isAdm&&!isMe?`<select data-role="${a.uid}" aria-label="Permisos"><option value="editor" ${a.role==='editor'?'selected':''}>Puede apuntar</option><option value="viewer" ${a.role==='viewer'?'selected':''}>Solo ver</option><option value="admin" ${a.role==='admin'?'selected':''}>Administrador</option></select><button class="ghost" data-kick="${a.uid}" aria-label="Quitar acceso">✕</button>`:''}</div>`}).join('')||'<div class="row"><span class="hint">Nadie más todavía.</span></div>';
       box.querySelectorAll('[data-role]').forEach(x=>x.onchange=()=>ST.setRole(p.id,x.dataset.role,x.value).then(()=>toast('Permisos cambiados')).catch(()=>toast('No se pudo cambiar')));
       box.querySelectorAll('[data-kick]').forEach(x=>x.onclick=()=>ST.kick(p.id,x.dataset.kick).then(()=>toast('Acceso quitado. Si tiene el link, puede volver a entrar: cambia el link.')).catch(()=>toast('No se pudo quitar')))})}
