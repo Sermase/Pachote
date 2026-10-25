@@ -179,6 +179,10 @@ button.row:hover{background:var(--sunk)}
 .whog button{display:flex;flex-direction:column;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);border-radius:14px;padding:10px 6px;font-weight:600;font-size:13.5px}
 .whog button .av{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:800}
 .whog button[aria-pressed="true"],.whog button.sug{border-color:var(--accent);background:var(--accent-soft)}
+.whog .tk{font-size:11px;font-weight:500;color:var(--muted);line-height:1.2;text-align:center}
+.whog button.sure .tk{color:var(--neg)}
+.bzm{display:flex;flex-direction:column;gap:8px;padding:10px 12px}
+.bzm .bn{font-size:17px;font-weight:800;letter-spacing:.5px}
 .kidc .kid{display:none}
 .mchip .av{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;color:#fff;font-size:11px;font-weight:800;flex:none}
 .mchip small{color:var(--muted);font-weight:500;font-size:12px}
@@ -763,6 +767,12 @@ function minTransfers(net){
 /* Para pagos: la persona responsable y, si es una familia, la familia entre paréntesis. */
 function payWho(p,from,to){const pn=u=>u&&u.startsWith('h:')?(famHead(p,u.slice(2))||{}).name||unitName(p,u):unitName(p,u);const fn=u=>u&&u.startsWith('h:')?unitName(p,u):'';
   const f1=fn(from),f2=fn(to);return `<span class="pw">${esc(pn(from))} <em>→</em> ${esc(pn(to))}</span>${f1||f2?`<small class="pf">${esc(f1||'por su cuenta')} → ${esc(f2||'por su cuenta')}</small>`:''}`}
+/* Bizum: móvil español de 9 cifras (con o sin +34), guardado con espacios para leerlo mejor. */
+function bizumNorm(t){const d=String(t||'').replace(/[^\d+]/g,'').replace(/^(\+|00)34/,'');return /^[6-9]\d{8}$/.test(d)?d.replace(/(\d{3})(\d{2})(\d{2})(\d{2})/,'$1 $2 $3 $4'):''}
+function bizumOf(p,u){const k=asPerson(p,u);const m=k&&k.startsWith('m:')?p.members.find(x=>'m:'+x.id===k):null;return m&&m.bizum?{name:m.name,phone:m.bizum}:null}
+/* Desde dónde entró una cuenta (la etiqueta guarda el navegador), en una palabra. */
+function devOf(l){l=String(l||'');return l==='Listopic'?'Listopic':/iPhone|iPad/.test(l)?'iPhone':/Android/.test(l)?'Android':/Macintosh/.test(l)?'Mac':/Windows/.test(l)?'Windows':/Linux/.test(l)?'Linux':''}
+function copyText(t,ok){try{navigator.clipboard.writeText(t).then(()=>toast(ok),()=>toast('Este visor no deja copiar.'))}catch(e){toast('Este visor no deja copiar.')}}
 /* Una familia como pagador equivale a quien lleva su cuenta. */
 function asPerson(p,u){if(u&&u.startsWith('h:')){const hd=famHead(p,u.slice(2));return hd?'m:'+hd.id:u}return u}
 function payLabel(p,u){if(u&&u.startsWith('h:')){const hd=famHead(p,u.slice(2));const fn=unitName(p,u);return hd?`${hd.name} (${fn})`:fn}return unitName(p,u)}
@@ -915,7 +925,15 @@ function askWho(force,then){
     s.querySelector('#wnot').onclick=()=>{s.querySelector('#wnotf').hidden=false;s.querySelector('#wnn').focus()};
     s.querySelector('#wnok').onclick=()=>{const n=s.querySelector('#wnn').value.trim();if(!n)return s.querySelector('#wnn').focus();(ST.setProfile?ST.setProfile({...myProf(),name:n}):Promise.resolve()).then(()=>{closeSheet();toast('¡Hola, '+n+'!');if(then)setTimeout(then,60)}).catch(()=>toast('No se pudo guardar'))};
     const wg=s.querySelector('#wgoogle');if(wg)wg.onclick=()=>openLogin();
-    s.querySelectorAll('[data-who]').forEach(b=>b.onclick=()=>{const m=p.members.find(x=>x.id===b.dataset.who);ST.setMe(p.id,m.id).then(()=>{const cur=S.plans[p.id];if(cur)cur._me={...(cur._me||{}),memberId:m.id};closeSheet();toast('¡Hola, '+m.name+'!');if(then)setTimeout(then,60);
+    /* Si otra cuenta ya dijo ser esa persona, se avisa y se pide un segundo toque (puede ser tu otra cuenta).
+       Sin avisar a quien entra sin cuenta cuando la otra es la de Listopic de esa persona: es lo normal al abrir desde el chat. */
+    const others={};const tag=b=>{const t=others[b.dataset.who];let n=b.querySelector('.tk');
+      if(!t){if(n)n.remove();b.classList.remove('sure');delete b.dataset.sure;return}
+      if(!n){n=document.createElement('small');n.className='tk';b.appendChild(n)}n.textContent=b.dataset.sure?'¿Seguro? Toca otra vez':'Ya la eligió otra cuenta'};
+    if(ST.watchAccess){if(S.accUnsub)S.accUnsub();S.accUnsub=ST.watchAccess(p.id,list=>{const me=ST.myUid();Object.keys(others).forEach(k=>delete others[k]);
+      (list||[]).forEach(a=>{const m=p.members.find(x=>x.id===a.memberId);if(a.uid!==me&&m&&!(anon&&m.luid===a.uid))others[m.id]=1});s.querySelectorAll('[data-who]').forEach(tag)})}
+    s.querySelectorAll('[data-who]').forEach(b=>b.onclick=()=>{if(others[b.dataset.who]&&!b.dataset.sure&&p._me?.memberId!==b.dataset.who){b.dataset.sure='1';b.classList.add('sure');tag(b);return}
+      const m=p.members.find(x=>x.id===b.dataset.who);ST.setMe(p.id,m.id).then(()=>{const cur=S.plans[p.id];if(cur)cur._me={...(cur._me||{}),memberId:m.id};closeSheet();toast('¡Hola, '+m.name+'!');if(then)setTimeout(then,60);
       const pr=myProf();if(!pr.name&&ST.setProfile)ST.setProfile({name:m.name}).catch(()=>{});
       if(pr.photo&&!m.photo&&p._me?.role!=='viewer'){const np=clone(plan());const x=np.members.find(y=>y.id===m.id);if(x){x.photo=pr.photo;savePlan(np)}}}).catch(()=>toast('No se pudo guardar'))})},false);
 }
@@ -1037,7 +1055,7 @@ function maybeAskInstall(){
 addEventListener('pachote-installable',()=>{render();setTimeout(maybeAskInstall,1200)});
 addEventListener('appinstalled',()=>{S.installed=true;window.__bip=null;render()});
 /* Menú general: perfil, tema, información de Pachote y el resto de Istari Core. */
-const APP_VERSION='v20';
+const APP_VERSION='v21';
 function themeSeg(){return `<div class="seg" id="mtheme">${[['auto','Automático'],['light','☀️ Claro'],['dark','🌙 Oscuro']].map(([k,n])=>`<button data-k="${k}" aria-pressed="${(document.documentElement.dataset.theme||'auto')===k}">${n}</button>`).join('')}</div>`}
 function bindTheme(s){s.querySelectorAll('#mtheme button').forEach(b=>b.onclick=()=>{const k=b.dataset.k;if(k==='auto')delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=k;
   try{k==='auto'?localStorage.removeItem('pachote_theme'):localStorage.setItem('pachote_theme',k)}catch(x){}s.querySelectorAll('#mtheme button').forEach(x=>x.setAttribute('aria-pressed',x===b))})}
@@ -1161,7 +1179,7 @@ function viewSaldos(p,c0){
   if(!units.length)return `<div class="empty"><h2>Nada que cuadrar</h2><p>Añade gente y gastos para ver quién debe a quién.</p></div>`;
   const max=Math.max(100,...units.map(u=>Math.abs(c.net[u])));
   units.sort((a,b)=>c.net[a]-c.net[b]);
-  window.__txt=`${p.name}\n`+(c.tx.map(t=>`${payLabel(p,t.from)} → ${payLabel(p,t.to)}: ${money(t.amt)}`).join('\n')||'Todo cuadrado');
+  window.__txt=`${p.name}\n`+(c.tx.map(t=>{const bz=bizumOf(p,t.to);return `${payLabel(p,t.from)} → ${payLabel(p,t.to)}: ${money(t.amt)}${bz?` (Bizum ${bz.phone})`:''}`}).join('\n')||'Todo cuadrado');
   window.__tx=c.tx;
   const settled=p.expenses.filter(e=>e.settle);
   return `${toggle}
@@ -1189,7 +1207,7 @@ function settle(i){
   openEntry(null,{kind:'transfer',settle:true,desc:'Liquidación',amount:t.amt,payer:asPerson(p,t.from),to:asPerson(p,t.to)});
 }
 function undoSettle(id){const np=clone(plan());np.expenses=np.expenses.filter(e=>e.id!==id);savePlan(np);toast('Pago deshecho')}
-function copyTx(){const t=window.__txt||'';try{navigator.clipboard.writeText(t).then(()=>toast('Copiado. Pégalo en el grupo.'),()=>toast('Este visor no deja copiar.'))}catch(e){toast('Este visor no deja copiar.')}}
+function copyTx(){copyText(window.__txt||'','Copiado. Pégalo en el grupo.')}
 
 /* Stats */
 function spreadByDay(gastos){
@@ -1620,8 +1638,10 @@ function openPlan(id){
         if(i>=0)np.expenses[i]=clone(l.snap);else np.expenses.push(clone(l.snap));savePlan(np);toast(l.act==='del'?'Movimiento recuperado':'Cambio deshecho')})})};
     if(lgd){lgd.addEventListener('toggle',()=>{if(lgd.open)loadLog()});if(lgd.open)loadLog()}
     if(ST&&ST.watchAccess){if(S.accUnsub)S.accUnsub();S.accUnsub=ST.watchAccess(p.id,list=>{const box=s.querySelector('#acclist');if(!box)return;const mine=ST.myUid();
+      /* Varias cuentas que dicen ser la misma persona (sin contar su cuenta de Listopic enlazada: abrir desde el chat es lo normal). */
+      const dup={};list.forEach(a=>{const m=p.members.find(x=>x.id===a.memberId);if(m&&m.luid!==a.uid)dup[m.id]=(dup[m.id]||0)+1});
       box.innerHTML=list.sort((a,b)=>(a.joined||0)-(b.joined||0)).map(a=>{const m=p.members.find(x=>x.id===a.memberId);const isMe=a.uid===mine;
-        return `<div class="row"><div class="main"><div class="t">${m?esc(m.name):'Sin identificar'}${isMe?' <span class="chip">este dispositivo</span>':''}</div><div class="s">${a.role==='admin'?'Administrador':a.role==='viewer'?'Solo ver':'Puede apuntar'} · desde ${esc(new Date(a.joined||0).toLocaleDateString('es-ES',{day:'numeric',month:'short'}))}</div></div>
+        return `<div class="row"><div class="main"><div class="t">${m?esc(m.name):'Sin identificar'}${isMe?' <span class="chip">este dispositivo</span>':''}${m&&dup[m.id]>1&&m.luid!==a.uid?` <span class="chip" title="Más de una cuenta dice ser ${esc(m.name)}">⚠️ repetida</span>`:''}</div><div class="s">${a.role==='admin'?'Administrador':a.role==='viewer'?'Solo ver':'Puede apuntar'} · desde ${esc(new Date(a.joined||0).toLocaleDateString('es-ES',{day:'numeric',month:'short'}))}${devOf(a.label)?` · ${devOf(a.label)}`:''}</div></div>
         ${isAdm&&!isMe?`<select data-role="${a.uid}" aria-label="Permisos"><option value="editor" ${a.role==='editor'?'selected':''}>Puede apuntar</option><option value="viewer" ${a.role==='viewer'?'selected':''}>Solo ver</option><option value="admin" ${a.role==='admin'?'selected':''}>Administrador</option></select><button class="ghost" data-kick="${a.uid}" aria-label="Quitar acceso">✕</button>`:''}</div>`}).join('')||'<div class="row"><span class="hint">Nadie más todavía.</span></div>';
       box.querySelectorAll('[data-role]').forEach(x=>x.onchange=()=>ST.setRole(p.id,x.dataset.role,x.value).then(()=>toast('Permisos cambiados')).catch(()=>toast('No se pudo cambiar')));
       box.querySelectorAll('[data-kick]').forEach(x=>x.onclick=()=>ST.kick(p.id,x.dataset.kick).then(()=>toast('Acceso quitado. Si tiene el link, puede volver a entrar: cambia el link.')).catch(()=>toast('No se pudo quitar')))})}
@@ -1824,6 +1844,8 @@ function openMember(id){
     <div class="field"><label for="mw">Peso en el reparto</label><select id="mw">${WS.map(([v,t])=>`<option value="${v}" ${wOf(m)===v?'selected':''}>${t}</option>`).join('')}${WS.some(x=>x[0]===wOf(m))?'':`<option value="${wOf(m)}" selected>×${numToInput(wOf(m))}</option>`}</select></div>
    </div>
    <p class="hint">El peso solo cuenta en los repartos «Por pesos»${FEAT.families?' y «Por familias»':''}.</p>
+   <div class="field"><label for="mbiz">📱 Móvil para Bizum <span class="hint">(opcional)</span></label><input id="mbiz" type="tel" inputmode="tel" autocomplete="off" maxlength="16" placeholder="600 12 34 56" value="${esc(m.bizum||'')}"></div>
+   <p class="hint">Sale al pagarle, para copiarlo en tu banco. Lo ve quien tenga acceso al grupo.</p>
    ${FEAT.kids&&!FEAT.families&&isKid(m)?`<div class="field"><label for="mresp">Quién asume su gasto</label><select id="mresp"><option value="">Nadie: paga lo suyo</option><option value="some" ${normRule(m.kidsBy)?.mode==='some'?'selected':''}>Adultos elegidos</option><option value="group" ${normRule(m.kidsBy)?.mode==='group'?'selected':''}>Todos los adultos</option></select>
      <div id="mrespw" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px" ${normRule(m.kidsBy)?.mode==='some'?'':'hidden'}>${allAdults(p).map(a=>`<button class="toggle" data-ra="${a.id}" aria-pressed="${(normRule(m.kidsBy)?.ids||[]).includes(a.id)}">${esc(a.name)}</button>`).join('')}</div></div>`:''}
    <div class="field"><span class="flabel">Estado</span><div class="seg" id="mon"><button data-k="1" aria-pressed="${isOn(m)}">Activo</button><button data-k="0" aria-pressed="${!isOn(m)}">Inactivo</button></div></div>
@@ -1838,7 +1860,8 @@ function openMember(id){
     s.querySelectorAll('#mkid button').forEach(b=>b.onclick=()=>{kid=b.dataset.k==='1';s.querySelectorAll('#mkid button').forEach(x=>x.setAttribute('aria-pressed',x===b));
       const w=parseFloat(wsel.value);if(kid&&w>=1)wsel.value='0.5';if(!kid&&w<1)wsel.value='1'});
     s.querySelector('#msave').onclick=()=>{const n=s.querySelector('#mname').value.trim();if(!n)return failer(s)('Escribe un nombre.');
-      const np=clone(p);const x=np.members.find(x=>x.id===m.id);x.name=n;if(photo)x.photo=photo;else delete x.photo;x.hh=s.querySelector('#mhh').value||null;x.weight=parseFloat(wsel.value);if(FEAT.kids)x.kid=kid;if(on)delete x.inactive;else x.inactive=true;
+      const np=clone(p);const x=np.members.find(x=>x.id===m.id);x.name=n;if(photo)x.photo=photo;else delete x.photo;x.hh=s.querySelector('#mhh').value||null;x.weight=parseFloat(wsel.value);if(FEAT.kids)x.kid=kid;
+      const bz=bizumNorm(s.querySelector('#mbiz').value);if(s.querySelector('#mbiz').value.trim()&&!bz)return failer(s)('Ese móvil no parece válido: 9 cifras, con o sin +34.');if(bz)x.bizum=bz;else delete x.bizum;if(on)delete x.inactive;else x.inactive=true;
       const rs=s.querySelector('#mresp');if(rs){const v=rs.value;const ids=[...s.querySelectorAll('[data-ra][aria-pressed="true"]')].map(b=>b.dataset.ra);
         if(!v)x.kidsBy={mode:'none'};else if(v==='group')x.kidsBy={mode:'group',ids:[]};else{if(!ids.length)return failer(s)('Marca al menos a un adulto responsable.');x.kidsBy={mode:'some',ids}}}
       savePlan(np);closeSheet()};
@@ -1865,7 +1888,8 @@ function openEntry(id,pre){
   const groups=FEAT.families?[...p.households.map(h=>({h,ms:p.members.filter(m=>m.hh===h.id&&vis(m))})),{h:null,ms:p.members.filter(m=>!p.households.some(h=>h.id===m.hh)&&vis(m))}].filter(g=>g.ms.length):[{h:null,flat:true,ms:p.members.filter(vis)}];
   const jo=allJoints(p);
   const whoOpts=`<optgroup label="Personas">${p.members.map(m=>`<option value="m:${m.id}">${esc(m.name)}${isOn(m)?'':' (inactivo)'}</option>`).join('')}</optgroup>${jo.length?`<optgroup label="Cuentas conjuntas">${jo.map(j=>`<option value="j:${j.id}">${esc(jointName(p,j))} (conjunta)</option>`).join('')}</optgroup>`:''}`;
-  sheet(`${pre?.settle?'<h2>💸 Pagar</h2><p class="hint" style="margin-top:-8px">Revisa el pago antes de apuntarlo: puedes cambiar el importe, la fecha o quién paga a quién.</p>':''}<div class="seg" id="ekind" ${pre?.settle?'hidden':''}><button data-k="gasto">Gasto</button><button data-k="ingreso">Ingreso</button><button data-k="transfer">Transferencia</button></div>
+  const bz=pre?.settle?bizumOf(p,pre.to):null;
+  sheet(`${pre?.settle?'<h2>💸 Pagar</h2><p class="hint" style="margin-top:-8px">Revisa el pago antes de apuntarlo: puedes cambiar el importe, la fecha o quién paga a quién.</p>':''}${bz?`<div class="card bzm"><span class="hint" style="margin:0">📱 Bizum a ${esc(bz.name)}</span><span class="bn num">${esc(bz.phone)}</span><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm sec" id="bzph">Copiar móvil</button><button class="btn sm sec" id="bzam">Copiar importe</button></div></div>`:''}<div class="seg" id="ekind" ${pre?.settle?'hidden':''}><button data-k="gasto">Gasto</button><button data-k="ingreso">Ingreso</button><button data-k="transfer">Transferencia</button></div>
    <div class="field"><label for="eamt">Importe (€)</label><div style="position:relative"><input id="eamt" style="padding-right:58px!important" class="amount-in num" inputmode="decimal" placeholder="0,00" value="${e?centsToInput(e.amount):pre?.amount?centsToInput(pre.amount):''}"><button type="button" id="ecalcbtn" class="ghost" aria-label="Calculadora" aria-expanded="false" title="Calculadora" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);width:42px;height:42px;padding:0;font-size:20px;border-radius:12px">🧮</button></div><span class="hint" id="ecalc" hidden style="margin-top:4px;font-weight:700"></span>
      <div class="keys" id="ekeys" hidden>${['7','8','9','÷','4','5','6','×','1','2','3','−',',','0','⌫','+','C','='].map(k=>`<button type="button" data-key="${k}" class="${'÷×−+C⌫'.includes(k)?'op':k==='='?'eq':''}" aria-label="${({'÷':'Entre','×':'Por','−':'Menos','+':'Más','⌫':'Borrar','C':'Borrar todo','=':'Usar el resultado'})[k]||k}">${k==='='?'= Usar resultado':k}</button>`).join('')}</div></div>
    <div class="field"><label for="edesc">Concepto</label><input id="edesc" maxlength="80" placeholder="" value="${esc(e?.desc||pre?.desc||'')}"></div>
@@ -1906,6 +1930,8 @@ function openEntry(id,pre){
     if(dr){amt.value=dr.amt;$('#edesc').value=dr.desc;st.kind=dr.kind;st.cat=dr.cat;st.catManual=dr.catManual;
       const n=document.createElement('p');n.className='hint';n.id='edraft';n.style.cssText='margin:0;display:flex;gap:8px;align-items:center';n.innerHTML='📝 Borrador recuperado <button class="ghost" id="edrop" style="margin-left:auto">Descartar</button>';s.insertBefore(n,$('#ekind'));
       n.querySelector('#edrop').onclick=()=>{S.entryDraft=null;amt.value='';$('#edesc').value='';st.cat='otros';st.catManual=false;n.remove();showCat&&showCat();updateVals&&updateVals();amt.focus()}}
+    if(bz){$('#bzph').onclick=()=>copyText(bz.phone.replace(/\s/g,''),'Móvil copiado. Pégalo en Bizum.');
+      $('#bzam').onclick=()=>{const c=calcEur(amt.value);copyText(c>0?centsToInput(c):amt.value.trim(),'Importe copiado.')}}
     if(!e&&!pre?.settle)S.onSheetClose=()=>{if(done)return;const a=amt.value.trim(),d=$('#edesc').value.trim();S.entryDraft=a||d?{g:p.id,amt:a,desc:d,kind:st.kind,cat:st.cat,catManual:st.catManual,pay:pay.value}:null};
     let last=null;try{last=localStorage.getItem('cf_pay_'+p.id)}catch(x){}
     const validPay=v=>v&&[...pay.options].some(o=>o.value===v);
