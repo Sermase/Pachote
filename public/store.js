@@ -37,6 +37,11 @@ async function firebaseStore(){
   try{await A.getRedirectResult(auth)}catch(e){if(e.code==='auth/credential-already-in-use'){const cred=A.GoogleAuthProvider.credentialFromError(e);pendingAdopt=auth.currentUser&&auth.currentUser.isAnonymous?await auth.currentUser.getIdToken().catch(()=>null):null;if(cred)await A.signInWithCredential(auth,cred).catch(()=>{})}else console.warn(e)}
   const user=await new Promise(res=>{const un=A.onAuthStateChanged(auth,async u=>{if(u){un();res(u)}else{try{await A.signInAnonymously(auth)}catch(e){un();res(null)}}})});
   if(!user)throw new Error('auth');
+  /* Abierto desde Listopic: entra con esa misma cuenta y, si este dispositivo iba sin cuenta, se lleva sus grupos. */
+  const hand=window.__handoff;window.__handoff=null;
+  if(hand){let to='';try{to=JSON.parse(atob(hand.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))).uid||''}catch(e){}
+    if(to&&to!==auth.currentUser.uid){const prev=auth.currentUser.isAnonymous?await auth.currentUser.getIdToken().catch(()=>null):null;
+      try{await A.signInWithCustomToken(auth,hand);if(prev)pendingAdopt=prev}catch(e){console.warn('Listopic',e&&e.code)}}}
   const uid=()=>auth.currentUser.uid;
   const G='pachoteGroups';
   const gref=g=>F.doc(db,G,g),mref=(g,m)=>F.doc(db,G,g,'movs',m),aref=(g,u)=>F.doc(db,G,g,'access',u),uref=u=>F.doc(db,'pachoteUsers',u);
@@ -81,13 +86,6 @@ async function firebaseStore(){
     user:()=>{const u=auth.currentUser;return u?{uid:u.uid,anon:u.isAnonymous,email:u.email||'',name:u.displayName||''}:null},
     /* Resumen de saldos para el chat de Listopic enlazado (lo calcula index.html con el mismo motor de siempre). */
     putSummary:(g,summary)=>F.updateDoc(gref(g),{summary:clean(summary)}),
-    /* Chat del grupo de Listopic: solo con cuenta de Listopic y estando en ese chat. */
-    watchChat(chatId,cb){return F.onSnapshot(F.query(F.collection(db,'chats',chatId,'messages'),F.orderBy('createdAt','desc'),F.limit(60)),
-      s=>cb(s.docs.map(d=>{const x=d.data();return {...x,id:d.id,at:x.createdAt&&x.createdAt.toMillis?x.createdAt.toMillis():Date.now()}}).reverse()),()=>cb(null))},
-    watchChatInfo(chatId,cb){return F.onSnapshot(F.doc(db,'chats',chatId),s=>cb(s.exists()?{id:s.id,...s.data()}:null),()=>cb(null))},
-    async sendChat(chatId,text){const t=String(text||'').trim().slice(0,2000);if(!t)return;
-      await F.addDoc(F.collection(db,'chats',chatId,'messages'),{text:t,senderId:uid(),createdAt:F.serverTimestamp(),type:'text',readBy:[uid()]});
-      await F.updateDoc(F.doc(db,'chats',chatId),{lastMessage:t,lastMessageTimestamp:F.serverTimestamp(),updatedAt:F.serverTimestamp()}).catch(()=>{})},
     /* Nombre y foto de la gente de Listopic (perfil público). */
     async person(u){if(names[u])return names[u];const s=await F.getDoc(F.doc(db,'publicProfiles',u)).catch(()=>null);const d=s&&s.exists()?s.data():{};
       return names[u]={name:d.displayName||d.username||d.name||'Alguien',photo:d.photoUrl||''}},
@@ -209,8 +207,7 @@ function mockStore(){
     async setProfile(pr){const d=load();(d.users[me]??={groups:{}}).profile={...(d.users[me].profile||{}),...clean(pr)};saveDb(d)},
     async linkGoogle(){throw new Error('mock')},signOut:async()=>{},
     migrate:async()=>null,async putSummary(g,sum){const d=load();if(d.groups[g]){d.groups[g].core.summary=clean(sum);saveDb(d)}},
-    watchChat(c,f){setTimeout(()=>f(null),0);return()=>{}},watchChatInfo(c,f){setTimeout(()=>f(null),0);return()=>{}},
-    async sendChat(){throw new Error('mock')},async person(){return {name:'Alguien',photo:''}},async myChats(){return []},
+    async person(){return {name:'Alguien',photo:''}},async myChats(){return []},
     async linkChat(){throw new Error('mock')},async unlinkChat(){throw new Error('mock')},
     async signInEmail(){throw new Error('mock')},async resetPassword(){throw new Error('mock')}
   };
