@@ -14,7 +14,7 @@ try{const t=localStorage.getItem('pachote_theme');if(t==='light'||t==='dark')doc
 <title>Pachote</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Figtree:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Figtree:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" media="print" onload="this.media='all'">
 <style>
 :root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 body{margin:0;font-size:14px}
@@ -638,18 +638,29 @@ function roundKeepSum(obj,tgt){
   for(const k in out)out[k]=out[k]||0;return out;
 }
 /* Cuentas conjuntas: viven en la familia (h.joints=[{id,ids}]). Se usan como pagador con la clave 'j:<id>'. */
+/* Índices por grupo para no recorrer la lista de gente en cada cálculo. Se rehacen solos cuando cambia el grupo
+   (cada cambio crea un objeto nuevo) o cuando cambian las opciones de familias/niños. */
+const _ix=new WeakMap();
+const featKey=()=>(FEAT.families?'F':'f')+(FEAT.kids?'K':'k');
+function IX(p){let c=_ix.get(p);const fk=featKey();if(c&&c.fk===fk)return c;
+  const M={},byHH={},hs=new Set(p.households.map(h=>h.id)),joints={};
+  p.members.forEach(m=>{M[m.id]=m;(byHH[m.hh||'']??=[]).push(m)});
+  p.households.forEach(h=>(h.joints||[]).forEach(j=>{joints[j.id]={...j,hid:h.id}}));
+  c={fk,M,byHH,hs,joints,unit:{},head:{}};_ix.set(p,c);return c}
 function allJoints(p){const out=[];p.households.forEach(h=>(h.joints||[]).forEach(j=>out.push({...j,hid:h.id})));return out}
-function jointOf(p,key){return key&&key.startsWith('j:')?allJoints(p).find(j=>'j:'+j.id===key)||null:null}
-function jointHolders(p,j){return (j?.ids||[]).map(id=>p.members.find(m=>m.id===id)).filter(Boolean)}
+function jointOf(p,key){return key&&key.startsWith('j:')?IX(p).joints[key.slice(2)]||null:null}
+function jointHolders(p,j){const M=IX(p).M;return (j?.ids||[]).map(id=>M[id]).filter(Boolean)}
 function jointName(p,j){const hs=jointHolders(p,j);return hs.length?hs.map(m=>m.name).join(' y '):'Cuenta conjunta'}
 function unitOf(p,key){
   if(!key)return key;
   if(key.startsWith('h:'))return key;
-  if(key.startsWith('j:')){const j=jointOf(p,key);return j&&p.households.some(h=>h.id===j.hid)?'h:'+j.hid:key}
-  const m=p.members.find(x=>'m:'+x.id===key);return m&&m.hh&&p.households.some(h=>h.id===m.hh)?'h:'+m.hh:key;
+  const ix=IX(p);if(key in ix.unit)return ix.unit[key];let r=key;
+  if(key.startsWith('j:')){const j=jointOf(p,key);r=j&&ix.hs.has(j.hid)?'h:'+j.hid:key}
+  else{const m=key.startsWith('m:')?ix.M[key.slice(2)]:null;r=m&&m.hh&&ix.hs.has(m.hh)?'h:'+m.hh:key}
+  return ix.unit[key]=r;
 }
 function sharesOf(p,e){
-  const M=Object.fromEntries(p.members.map(m=>[m.id,m]));
+  const M=IX(p).M;
   const parts=(e.parts||[]).filter(id=>M[id]);const vals=e.vals||{};
   switch(e.mode){
     case 'importe':{const o={};parts.forEach(id=>o[id]=(e.custom||{})[id]||0);return o}
@@ -671,7 +682,7 @@ const kindOf=e=>e.kind||'gasto';
 function modeLabel(p,mode,parts){const m=MODES.find(x=>x.k===(mode||'peso'));if((mode||'peso')==='peso'&&(parts||[]).every(id=>{const x=p.members.find(y=>y.id===id);return !x||wOf(x)===1}))return 'a partes iguales';return m?m.n.toLowerCase():''}
 /* indiv=true: saldo por persona. Lo que pagó o recibió «la familia» se reparte entre sus miembros según su peso. */
 /* Quien lleva la cuenta de una familia: el primer adulto en el orden de Gente. */
-function famHead(p,hid){const ms=p.members.filter(m=>m.hh===hid);return ms.find(m=>!isKid(m))||ms[0]||null}
+function famHead(p,hid){const ix=IX(p);if(hid in ix.head)return ix.head[hid];const ms=ix.byHH[hid||'']||[];return ix.head[hid]=ms.find(m=>!isKid(m))||ms[0]||null}
 /* Sobre quién recae lo de los niños. Tres niveles: niño → familia → grupo (y por defecto, quien lleva la cuenta).
    Modos: head (quien lleva la cuenta de su familia), adults (adultos de su familia), some (adultos elegidos), group (todos los adultos del grupo). */
 const KIDS_MODES=[['head','Quien lleva la cuenta'],['adults','Adultos de su familia'],['some','Adultos elegidos'],['group','Todos los adultos del grupo']];
@@ -701,11 +712,13 @@ function kidDist(p){
     const W=bs.reduce((a,b)=>a+wOf(b),0);const d={};bs.forEach(b=>d[b.id]=W>0?wOf(b)/W:1/bs.length);out[m.id]=d});
   return out;
 }
-function compute(p,indiv=false,foldKids=true){
+/* Los saldos de un grupo se calculan una vez por versión del grupo y modo; las pantallas los reutilizan. */
+const _cc=new WeakMap();
+function compute(p,indiv=false,foldKids=true){const k=(indiv?'I':'U')+(foldKids?'1':'0')+featKey();let m=_cc.get(p);if(!m){m={};_cc.set(p,m)}return m[k]||(m[k]=computeRaw(p,indiv,foldKids))}
+function computeRaw(p,indiv,foldKids){
   const KD=kidDist(p);const chg={};
   const net={},paid={},cons={};
-  const famOf=hid=>p.members.filter(m=>m.hh===hid);
-  const U=key=>{if(!key)return key;if(!indiv)return unitOf(p,key);if(key.startsWith('h:')&&famOf(key.slice(2)).length)return key;return key};
+  const U=key=>!key||indiv?key:unitOf(p,key);
   if(!indiv)p.households.forEach(h=>{net['h:'+h.id]=0;paid['h:'+h.id]=0});
   p.members.forEach(m=>{cons[m.id]=0;const u=U('m:'+m.id);net[u]??=0;paid[u]??=0});
   let spent=0,income=0;
@@ -1029,7 +1042,7 @@ function maybeAskInstall(){
 addEventListener('pachote-installable',()=>{render();setTimeout(maybeAskInstall,1200)});
 addEventListener('appinstalled',()=>{S.installed=true;window.__bip=null;render()});
 /* Menú general: perfil, tema, información de Pachote y el resto de Istari Core. */
-const APP_VERSION='v22';
+const APP_VERSION='v23';
 function themeSeg(){return `<div class="seg" id="mtheme">${[['auto','Automático'],['light','☀️ Claro'],['dark','🌙 Oscuro']].map(([k,n])=>`<button data-k="${k}" aria-pressed="${(document.documentElement.dataset.theme||'auto')===k}">${n}</button>`).join('')}</div>`}
 function bindTheme(s){s.querySelectorAll('#mtheme button').forEach(b=>b.onclick=()=>{const k=b.dataset.k;if(k==='auto')delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=k;
   try{k==='auto'?localStorage.removeItem('pachote_theme'):localStorage.setItem('pachote_theme',k)}catch(x){}s.querySelectorAll('#mtheme button').forEach(x=>x.setAttribute('aria-pressed',x===b))})}
@@ -1092,9 +1105,10 @@ document.addEventListener('click',ev=>{
   else if(a==='hh'){if(!guard(()=>openHH(v)))openHH(v)}else if(a==='goto')setTab(v);
   else if(a==='fam')openFamily(v);
   else if(a==='person')openPerson(v);
-  else if(a==='open'){S.mq='';S.current=v;S.tab='movs';render();window.scrollTo({top:0});try{history.pushState({g:v},'','#g')}catch(x){}askWho()}
+  else if(a==='open'){S.mq='';S.movLim=0;S.current=v;S.tab='movs';render();window.scrollTo({top:0});try{history.pushState({g:v},'','#g')}catch(x){}askWho()}
   else if(a==='profile'){openProfile()}
   else if(a==='menu'){openMenu()}
+  else if(a==='movmore'){S.movLim=(S.movLim||150)+300;const y=window.scrollY;render();window.scrollTo({top:y})}
   else if(a==='install'){doInstall()}
   else if(a==='relogin'){openLogin()}
   else if(a==='forgetlast'){ST.forgetLast();render()}
@@ -1114,14 +1128,17 @@ document.addEventListener('click',ev=>{
 function viewMovs(p,c){
   if(!p.members.length)return `<div class="empty"><h2>Primero, la gente</h2><p>Añade a los miembros del grupo de golpe y arrástralos a su familia.</p><button class="btn" data-act="goto" data-v="gente">Ir a Gente</button></div>`;
   const q=(S.mq||'').trim();const nn=t=>String(t||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');const qn=nn(q);
-  const list=!qn?p.expenses:p.expenses.filter(e=>{const who=[e.payer,e.to].map(k=>k?unitName(p,k):'').join(' ');const ps=(e.parts||[]).map(id=>(p.members.find(m=>m.id===id)||{}).name).join(' ');
+  const list=!qn?p.expenses:p.expenses.filter(e=>{const who=[e.payer,e.to].map(k=>k?unitName(p,k):'').join(' ');const M=IX(p).M;const ps=(e.parts||[]).map(id=>(M[id]||{}).name).join(' ');
     return nn(e.desc+' '+catOf(e.cat).n+' '+who+' '+ps+' '+centsToInput(e.amount)).includes(qn)});
   let body;
   if(!p.expenses.length)body=`<div class="empty"><h2>Sin movimientos todavía</h2><p>Pulsa Añadir para apuntar un gasto, un ingreso o una transferencia entre miembros.</p></div>`;
   else if(!list.length)body=`<p class="hint" style="text-align:center;padding:20px 0">Nada coincide con «${esc(q)}».</p>`;
   else{
-    const by={};[...list].sort((a,b)=>b.date.localeCompare(a.date)||(b.created||0)-(a.created||0)).forEach(e=>{(by[e.date]??=[]).push(e)});
-    body=Object.entries(by).map(([d,es])=>`<div class="section-label">${esc(fmtDate(d))}</div><div class="list">${es.map(e=>rowEntry(p,e)).join('')}</div>`).join('');
+    /* Con muchos movimientos se pintan los más recientes y el resto bajo demanda: la pestaña abre al momento. */
+    const sorted=[...list].sort((a,b)=>b.date.localeCompare(a.date)||(b.created||0)-(a.created||0));const lim=S.movLim||150;const shown=sorted.slice(0,lim);
+    const by={};shown.forEach(e=>{(by[e.date]??=[]).push(e)});
+    body=Object.entries(by).map(([d,es])=>`<div class="section-label">${esc(fmtDate(d))}</div><div class="list">${es.map(e=>rowEntry(p,e)).join('')}</div>`).join('')
+      +(sorted.length>lim?`<button class="btn sec" data-act="movmore" style="width:100%">Ver ${Math.min(300,sorted.length-lim)} más antiguos (quedan ${sorted.length-lim})</button>`:'');
   }
   const tot=qn&&list.length?`<p class="hint" style="margin:0 2px">${list.length} ${list.length===1?'movimiento':'movimientos'} · gastos ${money(list.filter(e=>kindOf(e)==='gasto').reduce((a,e)=>a+e.amount,0))}</p>`:'';
   return (p.expenses.length>6?`<div class="msearch"><input id="mq" type="search" placeholder="🔎 Buscar: cena, Carlos, 25…" value="${esc(S.mq||'')}" aria-label="Buscar movimientos" autocomplete="off"></div>${tot}`:'')+(new Set(p.expenses.map(kindOf)).size>1&&!qn?`<div class="legend" style="padding:0 2px"><span><span class="dot" style="background:var(--neg)"></span>Gastos</span><span><span class="dot" style="background:var(--pos)"></span>Ingresos</span><span><span class="dot" style="background:var(--ink)"></span>Transferencias</span></div>`:'')+body;
@@ -1287,7 +1304,7 @@ function viewGente(p,c){
   const act=p.members.filter(isOn).length,kids=p.members.filter(isKid).length;
   const head=`<div class="ghead"><div class="gcount"><b class="num">${p.members.length}</b> ${p.members.length===1?'persona':'personas'}<span class="muted">${act!==p.members.length?` · ${act} activas`:''}${FEAT.kids&&kids?` · ${kids} ${kids===1?'niño':'niños'}`:''}${FEAT.families&&p.households.length?` · ${p.households.length} ${p.households.length===1?'familia':'familias'}`:''}</span></div>
     </div>`;
-  if(p.closed)return `${head}<p class="hint">Grupo cerrado: toca a alguien para ver sus operaciones.</p>${zonesHTML(p,false)}`;
+  if(p.closed||p._me?.role==='viewer')return `${head}<p class="hint">${p.closed?'Grupo cerrado':'Tienes permiso de solo ver'}: toca a alguien para ver sus operaciones.</p>${zonesHTML(p,false)}`;
   if(!p.members.length)return `<div class="empty" style="padding:22px 16px"><h2>👋 ¿Quiénes sois?</h2><p>Escribe los nombres aquí debajo, separados por comas. Luego podrás agruparlos en familias arrastrándolos.</p></div>`;
   const offer=!FEAT.families||!FEAT.kids?`<div class="featoffer"><span>¿Hay familias que pagan juntas o niños?</span>${!FEAT.families?'<button class="ghost" data-act="feat" data-v="families">👪 Usar familias</button>':''}${!FEAT.kids?'<button class="ghost" data-act="feat" data-v="kids">🧸 Usar niños</button>':''}</div>`:'';
   if(p.members.length<2)return `${head}${zonesHTML(p,true)}<p class="hint" style="text-align:center">👇 Añade a los demás aquí debajo.</p>${offer}`;
@@ -1296,7 +1313,7 @@ function viewGente(p,c){
   ${zonesHTML(p,true)}${offer}`;
 }
 function bindGente(p){
-  if(p.closed){document.querySelectorAll('[data-mchip]').forEach(el=>el.onclick=()=>openPerson(el.dataset.mchip));return}
+  if(p.closed||p._me?.role==='viewer'){document.querySelectorAll('[data-mchip]').forEach(el=>el.onclick=()=>openPerson(el.dataset.mchip));return}
   document.querySelectorAll('[data-mchip]').forEach(el=>bindDrag(el,'m'));
   document.querySelectorAll('[data-hgrip]').forEach(el=>bindDrag(el,'h'));
 }
@@ -1305,7 +1322,7 @@ function bindGente(p){
 function qaOptions(p){return `<option value="">Sin familia</option>${p.households.map(h=>`<option value="${h.id}" ${qaHH===h.id?'selected':''}>${esc(h.name)}</option>`).join('')}`}
 function renderQA(p){
   const host=document.getElementById('qaHost');
-  if(!p||p.closed||S.tab!=='gente'||S.mode==='loading'){if(host.innerHTML)host.innerHTML='';host.dataset.plan='';return}
+  if(!p||p.closed||p._me?.role==='viewer'||S.tab!=='gente'||S.mode==='loading'){if(host.innerHTML)host.innerHTML='';host.dataset.plan='';return}
   const sig=p.id+'|'+FEAT.families+'|'+FEAT.kids;
   if(host.dataset.plan===sig&&document.getElementById('qa')){
     const sel=document.getElementById('qahh');if(sel&&document.activeElement!==sel){if(!p.households.some(h=>h.id===qaHH))qaHH='';sel.innerHTML=qaOptions(p)}
