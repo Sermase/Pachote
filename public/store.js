@@ -196,7 +196,7 @@ function mockStore(){
   const accCbs=[],logCbs=[];window.addEventListener('storage',e=>{if(e.key===K)fire()});
   const can=(G,role)=>G&&G.access[me]&&(role==='admin'?(G.access[me].role==='admin'||(!!G.core.allAdmin&&G.access[me].role==='editor')):['admin','editor'].includes(G.access[me].role));
   return {
-    kind:'mock',user:()=>({uid:me,anon:true,email:'',name:''}),
+    kind:'mock',user:()=>({uid:me,anon:location.search.includes('anon'),email:'',name:''}),
     watch(f){cb=f;setTimeout(fire,0);return()=>{}},
     async create(p){const d=load();d.groups[p.id]={log:(p._log||[]).map(l=>({...clean(l),uid:me,at:Date.now(),id:rid(10)})),core:{...coreOf(p),owner:me,inviteToken:rid(24)},movs:Object.fromEntries((p.expenses||[]).map(e=>[e.id,clean(e)])),access:{[me]:{role:'admin',memberId:p._me?.memberId||null,joined:Date.now(),label:'Este navegador'}}};
       (d.users[me]??={groups:{}}).groups[p.id]={joined:Date.now()};saveDb(d)},

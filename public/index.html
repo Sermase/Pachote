@@ -567,11 +567,13 @@ function logDiff(a,b){
   if((a.desc||'')!==(b.desc||''))out.push({act:'group',txt:'cambió la descripción del grupo'});
   if(JSON.stringify(featOf(a))!==JSON.stringify(featOf(b))){const f=featOf(b);out.push({act:'group',txt:`cambió las opciones: familias ${f.families?'sí':'no'}, niños ${f.kids?'sí':'no'}`})}
   if(JSON.stringify(a.kidsBy||null)!==JSON.stringify(b.kidsBy||null))out.push({act:'group',txt:'cambió quién paga lo de los niños (general)'});
+  if(!!a.needAccount!==!!b.needAccount)out.push({act:'group',txt:b.needAccount?'pidió cuenta para apuntar':'permitió apuntar sin cuenta'});
   if(!!a.allAdmin!==!!b.allAdmin)out.push({act:'group',txt:b.allAdmin?'hizo que todos los que entran administren':'quitó que todos administren'});
   if(!!a.closed!==!!b.closed)out.push({act:'group',txt:b.closed?'cerró el grupo':'reabrió el grupo'});
   return out;
 }
 function savePlan(p){
+  if(!S.plans[p.id]&&ST&&ST.kind==='cloud'&&isAnon()){S.current=null;render();needAccount(()=>{S.current=p.id;savePlan(p)});return}
   if(S.plans[p.id]?._lazy){toast('Un momento: aún se están cargando los movimientos');return}
   const prev=S.plans[p.id];const base=(prev&&S.hist[p.id]&&S.hist[p.id][p._v])||prev;
   const next=prev?applyChanges(prev,base,p):p;next.updated=Date.now();remember(next);S.plans[p.id]=next;render();
@@ -979,10 +981,14 @@ function authMsg(e){const c=String(e&&e.code||'');
   if(/too-many-requests/.test(c))return 'Demasiados intentos. Prueba en un rato.';
   if(/network-request-failed/.test(c))return 'Sin conexión. Inténtalo de nuevo.';
   return 'No se pudo entrar'+(c?` (${c.replace('auth/','')})`:'')+'.'}
-function openLogin(after,startUp){
+/* Cuenta obligatoria para crear grupos (y para apuntar en los grupos que lo pidan). */
+const isAnon=()=>!!(ST&&ST.user&&(ST.user()||{anon:true}).anon);
+const WHY_CREATE='Para crear un grupo hace falta una cuenta (Google o email): así nunca pierdes tus grupos y nadie puede llenar Pachote de grupos basura. Los demás pueden entrar con el link sin cuenta.';
+function needAccount(after,why){if(!isAnon())return false;openLogin(after,false,why||WHY_CREATE);return true}
+function openLogin(after,startUp,why){
   const last=(ST.lastAccount&&ST.lastAccount())||null;let up=!!startUp;
   const inp='border:1px solid var(--line);border-radius:11px;padding:10px 12px;background:var(--surface);color:var(--ink);font:inherit;font-size:16px';
-  sheet(`<h2>🔐 Tu cuenta de Pachote</h2><p class="hint" style="margin-top:-4px">Tus grupos te siguen a cualquier móvil. ¿Usas Listopic? Es la misma cuenta: entra con el mismo Google o email.</p>
+  sheet(`<h2>🔐 Tu cuenta de Pachote</h2>${why?`<p class="hint" style="margin-top:-4px;color:var(--ink)">${esc(why)}</p>`:''}<p class="hint" style="margin-top:-4px">Tus grupos te siguen a cualquier móvil. ¿Usas Listopic? Es la misma cuenta: entra con el mismo Google o email.</p>
     <div class="seg" id="lmode"><button data-k="in" aria-pressed="${!up}">Entrar</button><button data-k="up" aria-pressed="${up}">Crear cuenta</button></div>
     ${last&&last.email?`<p class="hint" data-lastline style="margin:0;text-align:center">La última vez entraste${last.google?' con Google':''} como <b>${esc(last.email)}</b>.</p>`:''}
     <button class="btn lpbtn" data-login="google">${GLOGO}Con Google</button>
@@ -1097,12 +1103,13 @@ function openInfo(k){
 /* ¿Quién eres? obligatorio para escribir: así el historial siempre tiene nombre. Vale ser alguien del grupo o, si no estás en la lista, tu nombre de perfil. */
 function knownWriter(p){return !p||!p.members.length||(p._me?.memberId&&p.members.some(m=>m.id===p._me.memberId))||!!myProf().name}
 function guard(retry){if(plan()?._me?.role==='viewer'){toast('Tienes permiso de solo ver en este grupo.');return true}if(plan()?.closed){toast('El grupo está cerrado. Reábrelo para hacer cambios.');return true}
+  if(plan()?.needAccount&&isAnon()){openLogin(retry||null,false,'En este grupo hace falta cuenta para apuntar o cambiar cosas. Sin cuenta puedes mirarlo todo.');return true}
   if(ST&&!knownWriter(plan())){askWho(true,retry||(()=>{}));return true}return false}
 function setTab(t){S.tab=t;try{localStorage.setItem('cf_tab2',t)}catch(e){}render();window.scrollTo({top:0})}
 
 document.addEventListener('click',ev=>{
   const b=ev.target.closest('[data-act]');if(!b)return;const a=b.dataset.act,v=b.dataset.v;
-  if(a==='tab')setTab(v);else if(a==='newplan')openPlan();else if(a==='editplan')openPlan(plan().id);
+  if(a==='tab')setTab(v);else if(a==='newplan'){if(!needAccount(()=>openPlan()))openPlan()}else if(a==='editplan')openPlan(plan().id);
   else if(a==='entry')openEntry(v);else if(a==='filter'){S.filter=v;render()}
   else if(a==='copy')copyTx();else if(a==='settle'){if(!guard(()=>settle(+v)))settle(+v)}else if(a==='undo'){if(!guard(()=>undoSettle(v)))undoSettle(v)}
   else if(a==='hh'){if(!guard(()=>openHH(v)))openHH(v)}else if(a==='goto')setTab(v);
@@ -1527,6 +1534,7 @@ function openPlan(id){
      <div class="field"><label for="plink">Link para invitar al grupo</label><input id="plink" readonly value="${esc(inviteLink(p.id))}" onclick="this.select()"></div>
      <div style="display:flex;flex-wrap:wrap;gap:8px"><button class="btn sm" id="pcopy">Copiar link</button><a class="btn sm sec" style="text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent('Únete a «'+p.name+'» en Pachote para llevar las cuentas: '+inviteLink(p.id))}">Enviar por WhatsApp</a>${isAdm?'<button class="btn sm danger" id="pregen">Cambiar link</button>':''}</div>
      <p class="hint">Quien abra el link entra al grupo sin registrarse y puede apuntar gastos. ${isAdm?'Si el link se filtra, «Cambiar link» invalida el anterior; quien ya está dentro sigue dentro.':''}</p>
+     ${isAdm?`<label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer"><input type="checkbox" id="pneedacc" ${p.needAccount?'checked':''} ${p.closed?'disabled':''} style="width:20px;height:20px;margin-top:2px;flex:none"><span><b>🔐 Para apuntar hace falta cuenta</b><br><span class="hint">Quien entre con el link sin cuenta podrá mirarlo todo, pero para apuntar, cambiar o borrar tendrá que entrar con Google o email. Para grupos con dinero serio.</span></span></label>`:p.needAccount?'<p class="hint">🔐 En este grupo hace falta cuenta para apuntar.</p>':''}
      ${isAdm?`<label class="chk" style="display:flex;gap:10px;align-items:flex-start;cursor:pointer"><input type="checkbox" id="palladm" ${p.allAdmin?'checked':''} ${p.closed?'disabled':''} style="width:20px;height:20px;margin-top:2px;flex:none"><span><b>👑 Todos los que entren administran</b><br><span class="hint">Cualquiera con el link podrá también cambiar el link, quitar dispositivos y borrar el grupo. Útil entre gente de confianza; si no, mejor nombrar a mano a uno o dos administradores aquí abajo.</span></span></label>`:p.allAdmin?'<p class="hint">👑 En este grupo todos los que entran administran.</p>':''}
      <div class="section-label" style="margin:6px 0 0">Dispositivos con acceso</div><div class="list" id="acclist"><div class="row"><span class="hint">Cargando…</span></div></div>
      <button class="ghost" id="pwho" style="align-self:flex-start">🙋 Cambiar quién soy yo</button>`)}
@@ -1568,6 +1576,7 @@ function openPlan(id){
     const step=$('#pstep');
     s.querySelectorAll('#pmenu button,#pmenu2 button').forEach(b=>b.onclick=()=>{
       const m=b.dataset.m;
+      if(['gente','todo','etapa'].includes(m)&&needAccount(()=>openPlan(p.id)))return;
       if(m==='importin'){const fi=$('#pimpin');fi.value='';fi.onchange=()=>{const f=fi.files[0];if(!f)return;const r=new FileReader();
         r.onload=()=>{let src;try{const d=JSON.parse(r.result);src=d.data||d;if(!Array.isArray(src.members)||!Array.isArray(src.expenses))throw 0}catch(x){failer(s)('Ese archivo no es una copia de Pachote.');return}
           const res=mergeInto(plan(),src);
@@ -1626,6 +1635,7 @@ function openPlan(id){
         try{const people=await Promise.all((c.participants||[]).map(u=>ST.person(u).then(x=>({uid:u,name:x.name}))));
           await ST.linkChat(p.id,c,matchMembers(plan(),people));closeSheet();toast(`Enlazado con «${names[i]}»`)}catch(e){console.error(e);b.disabled=false;toast('No se pudo enlazar')}})})
       .catch(()=>{lc.innerHTML='<div class="row"><span class="hint">No se pudieron cargar tus chats.</span></div>'});
+    const na=$('#pneedacc');if(na)na.onchange=()=>{const np=clone(plan());if(na.checked)np.needAccount=true;else delete np.needAccount;savePlan(np);toast(na.checked?'Ahora hace falta cuenta para apuntar':'Ya se puede apuntar sin cuenta')};
     const aa=$('#palladm');if(aa)aa.onchange=()=>{const np=clone(plan());if(aa.checked)np.allAdmin=true;else delete np.allAdmin;savePlan(np);toast(aa.checked?'Ahora todos los que entran administran':'Solo administran los que tú elijas')};
     const gg=$('#pgoogle');if(gg)gg.onclick=()=>openLogin();
     /* Historial: se carga al abrir la sección. */
