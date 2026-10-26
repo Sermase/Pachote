@@ -572,6 +572,7 @@ function logDiff(a,b){
   return out;
 }
 function savePlan(p){
+  if(S.plans[p.id]?._lazy){toast('Un momento: aún se están cargando los movimientos');return}
   const prev=S.plans[p.id];const base=(prev&&S.hist[p.id]&&S.hist[p.id][p._v])||prev;
   const next=prev?applyChanges(prev,base,p):p;next.updated=Date.now();remember(next);S.plans[p.id]=next;render();
   if(!ST)return;
@@ -792,6 +793,7 @@ function render(){
   const off=!navigator.onLine;const badge=S.mode==='mock'?'<span class="badge local" title="Modo de prueba"><span>Modo de prueba</span></span>':off?'<span class="badge local" title="Sin conexión: se sincroniza al volver"><span>Sin conexión</span></span>':'';
   if(!p){app.innerHTML=homeHTML(badge);return}
   if(!TABS.some(t=>t[0]===S.tab))S.tab='movs';
+  if(p._lazy&&ST&&ST.want)ST.want(p.id);
   const c=compute(p);const heads=p.members.length;const gc=groupColor(p);
   const mine=myFigures(p);
   app.innerHTML=`
@@ -804,7 +806,7 @@ function render(){
     ${p.closed?`<div class="banner"><b>Cerrado el ${esc(fmtDate(p.closed))}. Solo se puede consultar.</b><button class="ghost" data-act="reopen">Reabrir</button></div>`:''}
   </header>
   <nav class="tabs" role="tablist">${TABS.map(([k,n])=>`<button role="tab" aria-selected="${S.tab===k}" data-act="tab" data-v="${k}">${n}${k==='gente'&&p.members.length?` <span class="tabn">${p.members.length}</span>`:''}</button>`).join('')}</nav>
-  <main>${S.tab==='movs'?viewMovs(p,c):S.tab==='saldos'?viewSaldos(p,c):S.tab==='stats'?viewStats(p,c):viewGente(p,c)}</main>`;
+  <main>${p._lazy&&S.tab!=='gente'?'<div class="empty"><p>Cargando movimientos…</p></div>':S.tab==='movs'?viewMovs(p,c):S.tab==='saldos'?viewSaldos(p,c):S.tab==='stats'?viewStats(p,c):viewGente(p,c)}</main>`;
   renderQA(p);
   if(S.tab==='gente')bindGente(p);
   const ss=document.getElementById('scatsel');if(ss)ss.onchange=()=>{S.scat=ss.value;render()};
@@ -853,9 +855,9 @@ function myBalance(p){const st=myStanding(p);return st?st.v:null}
 function myFigures(p){const me=p._me?.memberId;if(!me||!p.members.some(m=>m.id===me))return null;const c=compute(p,true);const st=myStanding(p);return {spent:Math.round(c.chg[me]||0),bal:st.v,lab:st.lab}}
 function myBalanceStat(p){const v=myBalance(p);if(v==null)return '';return `<div class="stat"><span>${v>0?'Te deben':v<0?'Debes':'Tu saldo'}</span><b class="num v ${v>0?'pos':v<0?'neg':'zero'}">${v?money(Math.abs(v)):'En paz'}</b></div>`}
 function faces(p,max=5){const ms=p.members.filter(isOn);const sh=ms.slice(0,max);return `<span class="faces">${sh.map(m=>avHTML(m,memberColor(p,m))).join('')}${ms.length>max?`<span class="av more">+${ms.length-max}</span>`:''}</span>`}
-function gcard(p){const prev=FEAT;FEAT=featOf(p);const st=myStanding(p);const v=st?st.v:null;FEAT=prev;
+function gcard(p){const prev=FEAT;FEAT=featOf(p);const st=p._lazy?null:myStanding(p);const v=st?st.v:null;FEAT=prev;
   return `<button class="grow" data-act="open" data-v="${p.id}" style="--gc:${groupColor(p)}"><span class="gav">${esc(groupEmoji(p))}</span>
-    <span class="gmain"><span class="gname">${esc(p.name)}</span><span class="gmeta">${esc(p.desc?p.desc+' · '+groupMeta(p):groupMeta(p))}</span></span>
+    <span class="gmain"><span class="gname">${esc(p.name)}</span><span class="gmeta">${esc(p._lazy?(p.desc?p.desc+' · ':'')+p.members.length+' personas · cerrado':p.desc?p.desc+' · '+groupMeta(p):groupMeta(p))}</span></span>
     ${v==null||!v?'':`<span class="gme ${v>0?'pos':'neg'}">${esc(st.lab)}<b class="num">${money(Math.abs(v))}</b></span>`}<span class="chev" aria-hidden="true">›</span></button>`}
 /* Tras cerrar sesión: volver a entrar con un toque (los grupos están en la cuenta, no en el móvil). */
 function signedOutCard(){const u=ST&&ST.user&&ST.user();const last=ST&&ST.lastAccount&&ST.lastAccount();
@@ -1042,7 +1044,7 @@ function maybeAskInstall(){
 addEventListener('pachote-installable',()=>{render();setTimeout(maybeAskInstall,1200)});
 addEventListener('appinstalled',()=>{S.installed=true;window.__bip=null;render()});
 /* Menú general: perfil, tema, información de Pachote y el resto de Istari Core. */
-const APP_VERSION='v23';
+const APP_VERSION='v24';
 function themeSeg(){return `<div class="seg" id="mtheme">${[['auto','Automático'],['light','☀️ Claro'],['dark','🌙 Oscuro']].map(([k,n])=>`<button data-k="${k}" aria-pressed="${(document.documentElement.dataset.theme||'auto')===k}">${n}</button>`).join('')}</div>`}
 function bindTheme(s){s.querySelectorAll('#mtheme button').forEach(b=>b.onclick=()=>{const k=b.dataset.k;if(k==='auto')delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=k;
   try{k==='auto'?localStorage.removeItem('pachote_theme'):localStorage.setItem('pachote_theme',k)}catch(x){}s.querySelectorAll('#mtheme button').forEach(x=>x.setAttribute('aria-pressed',x===b))})}
@@ -1338,6 +1340,7 @@ function renderQA(p){
   </div>`;
   const qa=document.getElementById('qa');
   const go=()=>{
+    if(guard(()=>go()))return;
     const names=qa.value.split(/[,;\n]+|\s+y\s+/).map(s=>s.trim()).filter(Boolean);if(!names.length){qa.focus();return}
     const np=clone(plan());const hh=document.getElementById('qahh').value||null;const inc=document.getElementById('qaexp')?.checked;
     names.forEach(n=>{const id=uid()+Math.random().toString(36).slice(2,4);np.members.push({id,name:n.slice(0,40),hh,weight:qaKid?0.5:1,kid:qaKid});
@@ -1413,6 +1416,7 @@ function setKidState(m,kid){
   m.kid=kid;const w=wOf(m);if(kid&&w>=1)m.weight=0.5;if(!kid&&w<1)m.weight=1;
 }
 function moveMember(id,t){
+  if(guard()){S.pending=false;render();return}
   const np=clone(plan());const i=np.members.findIndex(x=>x.id===id);if(i<0){render();return}
   const m=np.members[i];const before=JSON.stringify(np.members);let msg='';
   let zone=t.zone;
@@ -1428,11 +1432,13 @@ function moveMember(id,t){
   if(msg)toast(msg);else if(famChanged)toast(`${m.name} → ${hh?np.households.find(h=>h.id===hh).name:'por su cuenta'}${isKid(m)?' (niño)':''}`);
 }
 function moveFamily(id,t){
+  if(guard()){S.pending=false;render();return}
   const np=clone(plan());const i=np.households.findIndex(h=>h.id===id);if(i<0){render();return}
   const [h]=np.households.splice(i,1);let j=np.households.findIndex(x=>x.id===t.id);if(t.after)j++;np.households.splice(j,0,h);
   S.pending=false;savePlan(np);
 }
 function nudgeFamily(id,dir){
+  if(guard())return;
   const np=clone(plan());const i=np.households.findIndex(h=>h.id===id);const j=i+dir;if(i<0||j<0||j>=np.households.length)return;
   [np.households[i],np.households[j]]=[np.households[j],np.households[i]];savePlan(np);
   setTimeout(()=>document.querySelector(`[data-hgrip="${id}"]`)?.focus(),30);

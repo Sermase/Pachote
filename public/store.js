@@ -11,7 +11,7 @@
 const FB='https://www.gstatic.com/firebasejs/10.12.2/';
 const clean=o=>JSON.parse(JSON.stringify(o));
 const rid=(n=20)=>{const a='abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';const r=crypto.getRandomValues(new Uint8Array(n));return [...r].map(x=>a[x%a.length]).join('')};
-const CORE_SKIP=new Set(['expenses','_me','_role','_v','_log','id']);
+const CORE_SKIP=new Set(['expenses','_me','_role','_v','_log','_lazy','id']);
 const coreOf=p=>{const o={};for(const k in p)if(!CORE_SKIP.has(k))o[k]=p[k];return clean(o)};
 /* Solo las claves de la ficha del grupo que han cambiado (sin contar «updated»), para no pisar cambios de otros. */
 const changedKeys=(c1,c0)=>{const ks=new Set([...Object.keys(c1||{}),...Object.keys(c0||{})]);return [...ks].filter(k=>!['updated','owner','inviteToken','_v','summary','chatId','migratedAt'].includes(k)&&JSON.stringify(c1[k])!==JSON.stringify((c0||{})[k]))};
@@ -44,7 +44,7 @@ async function firebaseStore(){
   const G='pachoteGroups';
   const gref=g=>F.doc(db,G,g),mref=(g,m)=>F.doc(db,G,g,'movs',m),aref=(g,u)=>F.doc(db,G,g,'access',u),uref=u=>F.doc(db,'pachoteUsers',u);
   const subs={};let myGroups={};let rejoinTried=false;let onPlans=()=>{};const plans={};let myProfile=null,onProf=()=>{};
-  const emit=()=>onPlans(Object.fromEntries(Object.entries(plans).filter(([,p])=>p&&p._core).map(([g,p])=>[g,{...p._core,id:g,expenses:p._movs?Object.values(p._movs).sort((a,b)=>(a.created||0)-(b.created||0)):[],_me:p._acc||null}])));
+  const emit=()=>onPlans(Object.fromEntries(Object.entries(plans).filter(([,p])=>p&&p._core).map(([g,p])=>[g,{...p._core,id:g,expenses:p._movs?Object.values(p._movs).sort((a,b)=>(a.created||0)-(b.created||0)):[],_lazy:!p._movs,_me:p._acc||null}])));
   /* Copia local de mis grupos (id + link vigente) para poder recuperarlos si la lista se pierde. */
   const KN='pachote_known';const known=()=>{try{return JSON.parse(localStorage.getItem(KN))||{}}catch(e){return {}}};
   const setKnown=(g,v)=>{try{const k=known();if(v)k[g]={...(k[g]||{}),...v};else delete k[g];localStorage.setItem(KN,JSON.stringify(k))}catch(e){}};
@@ -55,11 +55,12 @@ async function firebaseStore(){
     const drop=()=>{unwatch(g);setKnown(g,null);F.updateDoc(uref(uid()),{['groups.'+g]:F.deleteField()}).catch(()=>{});emit()};
     const retry=e=>{console.warn('grupo',g,e&&e.code);unwatch(g);emit();setTimeout(()=>{if(myGroups[g])watchGroup(g)},15000)};
     subs[g]=[
-      F.onSnapshot(gref(g),{includeMetadataChanges:false},s=>{if(!s.exists()){if(!s.metadata.fromCache)drop();return}const d=s.data();plans[g]._core=d;if(d.inviteToken)setKnown(g,{t:d.inviteToken,n:d.name});emit()},retry),
-      F.onSnapshot(F.collection(db,G,g,'movs'),s=>{plans[g]._movs=Object.fromEntries(s.docs.map(d=>[d.id,{...d.data(),id:d.id}]));emit()},()=>{}),
+      F.onSnapshot(gref(g),{includeMetadataChanges:false},s=>{if(!s.exists()){if(!s.metadata.fromCache)drop();return}const d=s.data();plans[g]._core=d;if(d.inviteToken)setKnown(g,{t:d.inviteToken,n:d.name});if(!d.closed||plans[g].want)startMovs(g);emit()},retry),
       F.onSnapshot(aref(g,uid()),s=>{if(!s.exists()){if(!s.metadata.fromCache)drop();return}plans[g]._acc=s.data();emit()},retry)];
   }
-  function unwatch(g){(subs[g]||[]).forEach(u=>u());delete subs[g];delete plans[g]}
+  /* Movimientos: los grupos cerrados no los cargan hasta que se abren (menos lecturas y arranque más rápido). */
+  function startMovs(g){const P=plans[g];if(!P||P._movsUnsub)return;P._movsUnsub=F.onSnapshot(F.collection(db,G,g,'movs'),s=>{if(!plans[g])return;plans[g]._movs=Object.fromEntries(s.docs.map(d=>[d.id,{...d.data(),id:d.id}]));emit()},()=>{})}
+  function unwatch(g){(subs[g]||[]).forEach(u=>u());if(plans[g]&&plans[g]._movsUnsub)plans[g]._movsUnsub();delete subs[g];delete plans[g]}
   /* Mudanza (una vez por dispositivo): si este navegador tenía sesión en el Firebase antiguo, sus grupos pasan aquí con el mismo papel. */
   const MIG='pachote_mudanza';
   async function migrateLegacy(){
@@ -146,6 +147,7 @@ async function firebaseStore(){
     regenToken:g=>F.updateDoc(gref(g),{inviteToken:rid(24)}),
     token:g=>plans[g]?._core?.inviteToken||'',
     myUid:()=>uid(),
+    want(g){if(!plans[g])return;plans[g].want=true;if(plans[g]._core)startMovs(g)},
     profile:()=>myProfile,
     onProfile(cb){onProf=cb},
     setProfile:pr=>F.setDoc(uref(uid()),{profile:clean(pr)},{merge:true}),

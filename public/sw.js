@@ -2,7 +2,7 @@
    - App (mismo origen): red primero, pero si la red tarda más de 3 s se sirve la copia guardada (arranque rápido con mala cobertura).
    - Librerías de Firebase y fuentes (URL con versión, no cambian): copia guardada primero, así la app abre aunque no haya conexión.
    Los datos los sincroniza Firestore por su cuenta. */
-const CACHE='pachote-v23';
+const CACHE='pachote-v24';
 const LIBS='pachote-libs-v1';
 const SHELL=['./','index.html','store.js','firebase-config.js','manifest.webmanifest','icon.svg','icon-192.png'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL)).then(()=>self.skipWaiting()))});

@@ -9,8 +9,24 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Si cambia algún saldo o falla el recorrido básico, no se publica.
+  tests:
+    name: Pruebas
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 20}
+      - name: Instalar
+        working-directory: tests
+        run: npm install --no-audit --no-fund && npx playwright install --with-deps chromium
+      - name: Ejecutar pruebas
+        working-directory: tests
+        run: node run.mjs
+
   hosting:
     name: App (Hosting)
+    needs: tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
